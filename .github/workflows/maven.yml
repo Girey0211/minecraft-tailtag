@@ -35,10 +35,10 @@ jobs:
 
 on:
   push:
-    branches: 
+    branches:
       - main
   pull_request:
-    branches: 
+    branches:
       - main
 
 jobs:
@@ -61,5 +61,5 @@ jobs:
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: built-jar
-          path: target/*.jar    
+          name: tailtag-jar
+          path: target/*.jar
