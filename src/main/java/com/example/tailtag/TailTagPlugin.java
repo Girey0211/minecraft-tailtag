@@ -392,7 +392,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 // 플레이어 이동 제한
                 Player player = Bukkit.getPlayer(playerUUID);
                 if (player != null && player.isOnline()) {
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 25, 255, false, false));
+                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 25, 255, false, false));
                     player.addPotionEffect(new PotionEffect(PotionEffectType.JUMP, 25, -10, false, false));
                 }
             }
