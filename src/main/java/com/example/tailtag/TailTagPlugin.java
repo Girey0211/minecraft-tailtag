@@ -13,6 +13,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -221,13 +223,41 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             int offsetX = (random.nextInt(GAME_AREA_SIZE * 2) - GAME_AREA_SIZE) * 16;
             int offsetZ = (random.nextInt(GAME_AREA_SIZE * 2) - GAME_AREA_SIZE) * 16;
             
-            Location spawnLocation = new Location(world, 
-                gameCenter.getX() + offsetX, 
-                world.getHighestBlockYAt(gameCenter.getBlockX() + offsetX, gameCenter.getBlockZ() + offsetZ) + 1,
-                gameCenter.getZ() + offsetZ);
+            // 안전한 스폰 위치 찾기
+            Location spawnLocation = findSafeSpawnLocation(world, 
+                gameCenter.getBlockX() + offsetX, 
+                gameCenter.getBlockZ() + offsetZ);
             
             player.teleport(spawnLocation);
         }
+    }
+    
+    private Location findSafeSpawnLocation(World world, int x, int z) {
+        // 최고 높이부터 시작해서 안전한 위치를 찾음
+        int highestY = world.getHighestBlockYAt(x, z);
+        
+        // 하늘에서 스폰되는 것을 방지하기 위해 최대 높이 제한
+        if (highestY > 100) {
+            highestY = 100;
+        }
+        
+        // 위에서부터 아래로 내려가면서 안전한 위치 찾기
+        for (int y = highestY; y > 0; y--) {
+            Location checkLoc = new Location(world, x, y, z);
+            
+            // 현재 블럭이 고체이고, 위 2블럭이 공기인지 확인
+            if (checkLoc.getBlock().getType().isSolid() && 
+                !checkLoc.getBlock().getType().equals(Material.LAVA) &&
+                !checkLoc.getBlock().getType().equals(Material.WATER) &&
+                checkLoc.clone().add(0, 1, 0).getBlock().getType().equals(Material.AIR) &&
+                checkLoc.clone().add(0, 2, 0).getBlock().getType().equals(Material.AIR)) {
+                
+                return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
+            }
+        }
+        
+        // 안전한 위치를 찾지 못한 경우 강제로 Y=70에 스폰
+        return new Location(world, x + 0.5, 70, z + 0.5);
     }
     
     private TeamColor getTargetColor(TeamColor currentColor, int totalPlayers) {
@@ -286,6 +316,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 checkDeadPlayers();
                 checkFrozenPlayers();
                 updateDragonEggEffects();
+                updateSlaveEffects();
             }
         }.runTaskTimer(this, 20L, 20L);
         
@@ -408,6 +439,16 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         }
     }
     
+    private void updateSlaveEffects() {
+        for (UUID slaveUUID : slaves.keySet()) {
+            Player slave = Bukkit.getPlayer(slaveUUID);
+            if (slave != null && slave.isOnline()) {
+                // 노예에게 나약함 2 효과 지속 부여
+                slave.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 25, 1, false, false));
+            }
+        }
+    }
+    
     private void showHeartbeat() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (!gameActive) continue;
@@ -457,6 +498,63 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             }
         }
         return null;
+    }
+    
+    @EventHandler
+    public void onEntityDamage(EntityDamageEvent event) {
+        if (!gameActive) return;
+        
+        if (event.getEntity() instanceof Player) {
+            Player player = (Player) event.getEntity();
+            UUID playerUUID = player.getUniqueId();
+            
+            // 자연사로 인해 얼어있는 플레이어는 환경 데미지만 무효 (플레이어 공격은 허용)
+            if (frozenPlayers.containsKey(playerUUID)) {
+                // 플레이어가 공격한 것이 아닌 경우에만 데미지 무효
+                if (!(event instanceof EntityDamageByEntityEvent)) {
+                    event.setCancelled(true);
+                    return;
+                } else {
+                    EntityDamageByEntityEvent entityEvent = (EntityDamageByEntityEvent) event;
+                    // 공격자가 플레이어가 아닌 경우 데미지 무효
+                    if (!(entityEvent.getDamager() instanceof Player)) {
+                        event.setCancelled(true);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    
+    @EventHandler
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (!gameActive) return;
+        
+        if (event.getEntity() instanceof Player) {
+            Player victim = (Player) event.getEntity();
+            UUID victimUUID = victim.getUniqueId();
+            
+            // 자연사로 인해 얼어있는 플레이어도 다른 플레이어에게는 공격받을 수 있음
+            // (위의 onEntityDamage에서 이미 처리됨)
+        }
+        
+        if (event.getDamager() instanceof Player && event.getEntity() instanceof Player) {
+            Player attacker = (Player) event.getDamager();
+            Player victim = (Player) event.getEntity();
+            
+            UUID attackerUUID = attacker.getUniqueId();
+            UUID victimUUID = victim.getUniqueId();
+            
+            // 노예가 주인을 공격하려는 경우
+            if (slaves.containsKey(attackerUUID)) {
+                UUID masterUUID = slaves.get(attackerUUID);
+                if (masterUUID.equals(victimUUID)) {
+                    event.setCancelled(true);
+                    attacker.sendMessage(ChatColor.RED + "하극상은 안됩니다");
+                    return;
+                }
+            }
+        }
     }
     
     @EventHandler
