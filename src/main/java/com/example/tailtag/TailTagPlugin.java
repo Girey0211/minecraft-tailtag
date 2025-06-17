@@ -670,7 +670,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         dz /= length;
         
         // 4블럭 거리의 선분으로 표시
-        for (int i = 1; i <= 4; i++) {
+        for (int i = 1; i <= 8; i++) {
             Location particleLoc = playerLoc.clone().add(dx*i, dy*i + 1.5, dz*i);
             player.getWorld().spawnParticle(Particle.REDSTONE, particleLoc, 1, 
                 new Particle.DustOptions(org.bukkit.Color.RED, 1.0f));
