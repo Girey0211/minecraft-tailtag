@@ -4,7 +4,7 @@ description: 마인크래프트 꼬리잡기 게임 플러그인
 author: YourName
 main: com.example.tailtag.TailTagPlugin
 api-version: 1.20
-java-version: 21
+java-version: 17
 
 commands:
   tailtag:
