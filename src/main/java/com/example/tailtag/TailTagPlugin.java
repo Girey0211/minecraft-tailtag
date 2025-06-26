@@ -163,9 +163,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             // 인벤토리 저장
             saveInventory(player);
             
-            // 드래곤 알 지급
-            player.getInventory().addItem(new ItemStack(Material.DRAGON_EGG, 1));
-            player.getInventory().addItem(new ItemStack(Material.DIAMOND, 5));
+           
         }
         
         commander.sendMessage(ChatColor.GREEN + "게임이 시작되었습니다!");
