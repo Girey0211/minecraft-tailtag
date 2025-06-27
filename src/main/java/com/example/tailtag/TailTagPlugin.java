@@ -25,6 +25,11 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.Sound;
+import org.bukkit.Particle;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.ChatColor;
+import org.bukkit.potion.PotionEffect;
 
 import java.util.*;
 
