@@ -416,7 +416,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 }
 
 @EventHandler
-public void onPlayerDeath(PlayerDeathEvent event) {
+public void onPlayerDeathHandler(PlayerDeathEvent event) {
     if (!gameActive) return;
     
     Player victim = event.getEntity();
@@ -445,12 +445,16 @@ public void onPlayerDeath(PlayerDeathEvent event) {
             // (실제 구현에서는 노예의 타겟을 별도로 관리하는 것이 좋을 수 있음)
             
             // 노예 체력 제한 (4칸 = 8.0)
-            victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
-            victim.setHealth(8.0);
+            if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
+                victim.setHealth(8.0);
+            }
             
             // 주인 체력 감소
-            double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
-            killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+            if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
+                killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+            }
             
             // 메시지 전송
             victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
