@@ -231,31 +231,32 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     }
     
     private Location findSafeSpawnLocation(World world, int x, int z) {
-        // 최고 높이부터 시작해서 안전한 위치를 찾음
-        int highestY = world.getHighestBlockYAt(x, z);
-        
-        // 하늘에서 스폰되는 것을 방지하기 위해 최대 높이 제한
-        if (highestY > 100) {
-            highestY = 100;
-        }
-        
-        // 위에서부터 아래로 내려가면서 안전한 위치 찾기
-        for (int y = highestY; y > 0; y--) {
-            Location checkLoc = new Location(world, x, y, z);
-            
-            // 현재 블럭이 고체이고, 위 2블럭이 공기인지 확인
-            if (checkLoc.getBlock().getType().isSolid() && 
-                !checkLoc.getBlock().getType().equals(Material.LAVA) &&
-                !checkLoc.getBlock().getType().equals(Material.WATER) &&
-                checkLoc.clone().add(0, 1, 0).getBlock().getType().equals(Material.AIR) &&
-                checkLoc.clone().add(0, 2, 0).getBlock().getType().equals(Material.AIR)) {
-                
-                return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
-            }
-        }
-       // 조건에 맞는 위치가 없을 경우 원래 위치 위로 리턴
-    return origin.clone().add(0.5, 1, 0.5); 
+    // 최고 높이부터 시작해서 안전한 위치를 찾음
+    int highestY = world.getHighestBlockYAt(x, z);
+    
+    // 하늘에서 스폰되는 것을 방지하기 위해 최대 높이 제한
+    if (highestY > 100) {
+        highestY = 100;
     }
+    
+    // 위에서부터 아래로 내려가면서 안전한 위치 찾기
+    for (int y = highestY; y > 0; y--) {
+        Location checkLoc = new Location(world, x, y, z);
+        
+        // 현재 블럭이 고체이고, 위 2블럭이 공기인지 확인
+        if (checkLoc.getBlock().getType().isSolid() && 
+            !checkLoc.getBlock().getType().equals(Material.LAVA) &&
+            !checkLoc.getBlock().getType().equals(Material.WATER) &&
+            checkLoc.clone().add(0, 1, 0).getBlock().getType().equals(Material.AIR) &&
+            checkLoc.clone().add(0, 2, 0).getBlock().getType().equals(Material.AIR)) {
+            
+            return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
+        }
+    }
+
+    // 조건에 맞는 위치가 없을 경우, 기본 위치 사용 (예: Y=64)
+    return new Location(world, x + 0.5, 65, z + 0.5);
+}
     
     private TeamColor getTargetColor(TeamColor currentColor, int totalPlayers) {
         TeamColor[] colors = Arrays.copyOf(TeamColor.values(), totalPlayers);
