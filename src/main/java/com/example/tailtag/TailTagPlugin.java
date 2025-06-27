@@ -416,7 +416,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 }
 
 @EventHandler
-public void onPlayerDeathHandler(PlayerDeathEvent event) {
+public void onPlayerDeath(PlayerDeathEvent event) {
     if (!gameActive) return;
     
     Player victim = event.getEntity();
@@ -435,45 +435,92 @@ public void onPlayerDeathHandler(PlayerDeathEvent event) {
         TeamColor targetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
         
         if (targetColor == victimColor) {
-            // 노예로 만들기
-            slaves.put(victimUUID, killerUUID);
-            masters.get(killerUUID).add(victimUUID);
-            
-            // 노예의 타겟을 주인의 타겟과 같게 설정
-            TeamColor masterTargetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
-            // 노예의 색깔을 주인의 타겟 색깔로 변경하여 같은 타겟을 갖도록 함
-            // (실제 구현에서는 노예의 타겟을 별도로 관리하는 것이 좋을 수 있음)
-            
-            // 노예 체력 제한 (4칸 = 8.0)
-            if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
-                victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
-                victim.setHealth(8.0);
+            // 노예로 만들기 (새로운 노예인 경우에만)
+            if (!slaves.containsKey(victimUUID)) {
+                slaves.put(victimUUID, killerUUID);
+                
+                // masters Map 초기화 확인
+                if (!masters.containsKey(killerUUID)) {
+                    masters.put(killerUUID, new HashSet<>());
+                }
+                masters.get(killerUUID).add(victimUUID);
+                
+                // 노예의 타겟을 주인의 타겟과 같게 설정
+                // 노예의 색깔을 주인의 색깔로 변경하여 같은 타겟을 갖도록 함
+                playerColors.put(victimUUID, killerColor);
+                
+                // 노예 체력 제한 (4칸 = 8.0)
+                if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                    victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
+                    victim.setHealth(8.0);
+                }
+                
+                // 주인 체력 감소 (새로운 노예를 만들 때만)
+                if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                    double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
+                    killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+                    killer.setHealth(Math.min(killer.getHealth(), killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue()));
+                }
+                
+                // 메시지 전송
+                victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
+                killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
             }
             
-            // 주인 체력 감소
-            if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
-                double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
-                killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
-            }
-            
-            // 메시지 전송
-            victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
-            killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
-            
-            // 노예를 주인 위치로 텔레포트
+            // 노예를 주인 위치로 텔레포트 (항상 실행)
             victim.teleport(killer.getLocation());
+            
+        } else if (slaves.containsKey(victimUUID) && slaves.get(victimUUID).equals(killerUUID)) {
+            // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
+            useTotemOfUndying(victim, true); // 움직임 제한 해제
+            
+        } else {
+            // 주인-노예 관계나 쫓고 쫓기는 관계가 아닌 경우 - 자연사 처리
+            handleNaturalDeath(victim);
         }
     } else {
-        // 자연사
-        UUID victimUUID = victim.getUniqueId();
-        deadPlayers.put(victimUUID, System.currentTimeMillis());
-        frozenPlayers.put(victimUUID, 120); // 120초
-        
-        victim.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
+        // 자연사 - 불사의 토템 사용
+        useTotemOfUndying(victim, false);
     }
 }
+
+// 불사의 토템 사용 메서드
+private void useTotemOfUndying(Player player, boolean removeFrozen) {
+    UUID playerUUID = player.getUniqueId();
     
-    private void checkFrozenPlayers() {
+    // 불사의 토템 효과 적용
+    player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue()); // 풀피로 회복
+    
+    // 기존 포션 효과 모두 제거 (불사의 토템 버프 제거)
+    for (PotionEffect effect : player.getActivePotionEffects()) {
+        player.removePotionEffect(effect.getType());
+    }
+    
+    if (removeFrozen) {
+        // 노예가 주인에게 죽은 경우 - 움직임 제한 해제
+        frozenPlayers.remove(playerUUID);
+        player.sendMessage(ChatColor.GREEN + "주인말을 잘 들으십쇼.");
+    } else {
+        // 자연사의 경우 - 2분간 움직임 제한
+        deadPlayers.put(playerUUID, System.currentTimeMillis());
+        frozenPlayers.put(playerUUID, 120); // 120초
+        player.sendMessage(ChatColor.RED + "2분간 움직일 수 없습니다.");
+    }
+    
+    // 불사의 토템 효과 시각적 표시
+    player.getWorld().spawnParticle(Particle.TOTEM, player.getLocation(), 30);
+    player.playSound(player.getLocation(), Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
+}
+
+// 자연사 처리 메서드 (기존 코드 유지)
+private void handleNaturalDeath(Player victim) {
+    UUID victimUUID = victim.getUniqueId();
+    deadPlayers.put(victimUUID, System.currentTimeMillis());
+    frozenPlayers.put(victimUUID, 120); // 120초
+    
+    victim.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
+}
+ private void checkFrozenPlayers() {
         Iterator<Map.Entry<UUID, Integer>> iterator = frozenPlayers.entrySet().iterator();
         
         while (iterator.hasNext()) {
@@ -622,65 +669,7 @@ public void onPlayerDeathHandler(PlayerDeathEvent event) {
             }
         }
     }
-    
- @EventHandler
-public void onPlayerDeath(PlayerDeathEvent event) {
-    if (!gameActive) return;
-    
-    Player victim = event.getEntity();
-    Player killer = victim.getKiller();
-    
-    event.setDeathMessage(""); // 킬로그 숨김
-    
-    if (killer != null && killer instanceof Player) {
-        UUID victimUUID = victim.getUniqueId();
-        UUID killerUUID = killer.getUniqueId();
-        
-        TeamColor victimColor = playerColors.get(victimUUID);
-        TeamColor killerColor = playerColors.get(killerUUID);
-        
-        // 올바른 색깔 순서로 잡았는지 확인
-        TeamColor targetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
-        
-        if (targetColor == victimColor) {
-            // 노예로 만들기
-            slaves.put(victimUUID, killerUUID);
-            masters.get(killerUUID).add(victimUUID);
-            
-            // 노예의 타겟을 주인의 타겟과 같게 설정
-            TeamColor masterTargetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
-            // 노예의 색깔을 주인의 타겟 색깔로 변경하여 같은 타겟을 갖도록 함
-            // (실제 구현에서는 노예의 타겟을 별도로 관리하는 것이 좋을 수 있음)
-            
-            // 노예 체력 제한 (4칸 = 8.0)
-            if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
-                victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
-                victim.setHealth(8.0);
-            }
-            
-            // 주인 체력 감소
-            if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
-                double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
-                killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
-            }
-            
-            // 메시지 전송
-            victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
-            killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
-            
-            // 노예를 주인 위치로 텔레포트
-            victim.teleport(killer.getLocation());
-        }
-    } else {
-        // 자연사
-        UUID victimUUID = victim.getUniqueId();
-        deadPlayers.put(victimUUID, System.currentTimeMillis());
-        frozenPlayers.put(victimUUID, 120); // 120초
-        
-        victim.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
-    }
-}
-    
+      
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         if (!gameActive) return;
