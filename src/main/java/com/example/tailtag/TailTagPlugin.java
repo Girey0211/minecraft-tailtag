@@ -427,6 +427,25 @@ public void onPlayerDeathForTotem(PlayerDeathEvent event) {
         return;
     }
     
+    // 노예인지 확인
+    if (slaves.containsKey(playerUUID)) {
+        // 노예인 경우: 불사의 토템 효과 없이 단순히 움직이지 못하게 함
+        event.setCancelled(true);
+        
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (player.isOnline()) {
+                // HP를 최대치로 설정
+                player.setHealth(player.getMaxHealth());
+                
+                // 움직임 제한 적용 (2분)
+                frozenPlayers.put(playerUUID, 120);
+                player.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
+            }
+        }, 1L);
+        return;
+    }
+    
+    // 자유인인 경우에만 불사의 토템 효과 적용
     // 자연사 (몬스터, 환경 데미지 등)인 경우에만 자동 부활
     // 사망 이벤트 취소 (죽지 않게 함)
     event.setCancelled(true);
