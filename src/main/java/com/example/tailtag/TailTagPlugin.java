@@ -386,7 +386,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         }
     }
     
-   private void checkDeadPlayers() {
+  private void checkDeadPlayers() {
     Iterator<Map.Entry<UUID, Long>> iterator = deadPlayers.entrySet().iterator();
     
     while (iterator.hasNext()) {
@@ -417,7 +417,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 
 // 플레이어 사망 이벤트에서 자동 부활 처리 (자연사만)
 @EventHandler
-public void onPlayerDeath(PlayerDeathEvent event) {
+public void onPlayerDeathForTotem(PlayerDeathEvent event) {
     Player player = event.getEntity();
     UUID playerUUID = player.getUniqueId();
     
@@ -447,62 +447,9 @@ public void onPlayerDeath(PlayerDeathEvent event) {
             
             // 불사의 토템 사용 효과 재생 (파티클과 사운드)
             player.getWorld().spawnParticle(Particle.TOTEM, player.getLocation(), 30);
-            player.playSound(player.getLocation(), Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
+            player.playSound(player.getLocation(), org.bukkit.Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
         }
     }, 1L); // 1틱 후 실행
-}
-
-// 플레이어 리스폰 이벤트를 처리하는 리스너 (백업용)
-@EventHandler
-public void onPlayerRespawn(PlayerRespawnEvent event) {
-    Player player = event.getPlayer();
-    UUID playerUUID = player.getUniqueId();
-    
-    // 죽은 플레이어 목록에 있는 경우에만 처리 (불사의 토템 사용으로 간주)
-    if (deadPlayers.containsKey(playerUUID)) {
-        // 불사의 토템으로 인한 기본 효과들을 지연 후 제거
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                // 모든 포션 효과 제거 (불사의 토템 기본 효과 포함)
-                for (PotionEffect effect : player.getActivePotionEffects()) {
-                    player.removePotionEffect(effect.getType());
-                }
-                
-                // HP를 최대치로 설정
-                player.setHealth(player.getMaxHealth());
-                
-                // 사용자 정의 효과만 적용 (화염 저항 1분)
-                player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
-            }
-        }, 2L); // 2틱 후 실행 (불사의 토템 효과가 적용된 후)
-    }
-}
-
-// 불사의 토템 사용 이벤트를 처리하는 리스너 추가
-@EventHandler
-public void onEntityResurrect(EntityResurrectEvent event) {
-    if (event.getEntity() instanceof Player) {
-        Player player = (Player) event.getEntity();
-        UUID playerUUID = player.getUniqueId();
-        
-        // 죽은 플레이어 목록에 있는 경우에만 처리
-        if (deadPlayers.containsKey(playerUUID)) {
-            // 불사의 토템으로 인한 기본 효과들을 지연 후 제거
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                // 모든 포션 효과 제거 (불사의 토템 기본 효과 포함)
-                for (PotionEffect effect : player.getActivePotionEffects()) {
-                    player.removePotionEffect(effect.getType());
-                }
-                
-                // HP를 최대치로 설정
-                player.setHealth(player.getMaxHealth());
-                
-                // 사용자 정의 효과만 적용 (화염 저항 1분)
-                player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
-                
-            }, 1L); // 1틱 후 실행 (불사의 토템 효과가 적용된 후)
-        }
-    }
 }
     
     private void checkFrozenPlayers() {
