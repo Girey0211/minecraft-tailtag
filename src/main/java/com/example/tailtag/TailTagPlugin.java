@@ -254,8 +254,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             }
         }
         
-        // 안전한 위치를 찾지 못한 경우 강제로 Y=70에 스폰
-        return new Location(world, x + 0.5, 70, z + 0.5);
     }
     
     private TeamColor getTargetColor(TeamColor currentColor, int totalPlayers) {
