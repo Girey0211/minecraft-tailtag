@@ -386,24 +386,61 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         }
     }
     
-    private void checkDeadPlayers() {
-        Iterator<Map.Entry<UUID, Long>> iterator = deadPlayers.entrySet().iterator();
+   private void checkDeadPlayers() {
+    Iterator<Map.Entry<UUID, Long>> iterator = deadPlayers.entrySet().iterator();
+    
+    while (iterator.hasNext()) {
+        Map.Entry<UUID, Long> entry = iterator.next();
+        UUID playerUUID = entry.getKey();
+        long deathTime = entry.getValue();
         
-        while (iterator.hasNext()) {
-            Map.Entry<UUID, Long> entry = iterator.next();
-            UUID playerUUID = entry.getKey();
-            long deathTime = entry.getValue();
-            
-            if (System.currentTimeMillis() - deathTime >= 120000) { // 2분
-                Player player = Bukkit.getPlayer(playerUUID);
-                if (player != null && player.isOnline()) {
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0)); // 1분
-                    frozenPlayers.remove(playerUUID);
+        if (System.currentTimeMillis() - deathTime >= 120000) { // 2분
+            Player player = Bukkit.getPlayer(playerUUID);
+            if (player != null && player.isOnline()) {
+                // 모든 포션 효과 제거
+                for (PotionEffect effect : player.getActivePotionEffects()) {
+                    player.removePotionEffect(effect.getType());
                 }
-                iterator.remove();
+                
+                // HP를 최대치로 설정
+                player.setHealth(player.getMaxHealth());
+                
+                // 사용자 정의 효과만 적용 (화염 저항 1분)
+                player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
+                
+                frozenPlayers.remove(playerUUID);
             }
+            iterator.remove();
         }
     }
+}
+
+// 불사의 토템 사용 이벤트를 처리하는 리스너 추가
+@EventHandler
+public void onEntityResurrect(EntityResurrectEvent event) {
+    if (event.getEntity() instanceof Player) {
+        Player player = (Player) event.getEntity();
+        UUID playerUUID = player.getUniqueId();
+        
+        // 죽은 플레이어 목록에 있는 경우에만 처리
+        if (deadPlayers.containsKey(playerUUID)) {
+            // 불사의 토템으로 인한 기본 효과들을 지연 후 제거
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                // 모든 포션 효과 제거 (불사의 토템 기본 효과 포함)
+                for (PotionEffect effect : player.getActivePotionEffects()) {
+                    player.removePotionEffect(effect.getType());
+                }
+                
+                // HP를 최대치로 설정
+                player.setHealth(player.getMaxHealth());
+                
+                // 사용자 정의 효과만 적용 (화염 저항 1분)
+                player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
+                
+            }, 1L); // 1틱 후 실행 (불사의 토템 효과가 적용된 후)
+        }
+    }
+}
     
     private void checkFrozenPlayers() {
         Iterator<Map.Entry<UUID, Integer>> iterator = frozenPlayers.entrySet().iterator();
