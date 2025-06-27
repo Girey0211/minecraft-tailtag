@@ -740,7 +740,7 @@ public void onPlayerDeathForTotem(PlayerDeathEvent event) {
     };
     
     // 스케줄러 실행
-    particleTask.runTaskTimer(plugin, 0L, interval); // plugin은 메인 플러그인 인스턴스
+    particleTask.runTaskTimer(this, 0L, interval); // this는 현재 플러그인 인스턴스
     
     player.sendMessage(ChatColor.YELLOW + "타겟 방향을 3초간 표시합니다!");
 }
