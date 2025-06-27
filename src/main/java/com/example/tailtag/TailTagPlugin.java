@@ -415,12 +415,11 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     }
 }
 
-// 플레이어 사망 이벤트에서 자동 부활 처리 (자연사만)
 // 클래스 상단에 import 추가 필요:
 // import org.bukkit.attribute.AttributeInstance;
 
 @EventHandler
-public void onPlayerDeath(PlayerDeathEvent event) {
+public void onPlayerDeathWithSlaveLogic(PlayerDeathEvent event) {
     if (!gameActive) return;
     
     Player victim = event.getEntity();
@@ -627,7 +626,7 @@ public void onPlayerDeath(PlayerDeathEvent event) {
         }
     }
     
-    @EventHandler
+ @EventHandler
 public void onPlayerDeath(PlayerDeathEvent event) {
     if (!gameActive) return;
     
@@ -657,17 +656,15 @@ public void onPlayerDeath(PlayerDeathEvent event) {
             // (실제 구현에서는 노예의 타겟을 별도로 관리하는 것이 좋을 수 있음)
             
             // 노예 체력 제한 (4칸 = 8.0)
-            AttributeInstance victimHealthAttr = victim.getAttribute(Attribute.GENERIC_MAX_HEALTH);
-            if (victimHealthAttr != null) {
-                victimHealthAttr.setBaseValue(8.0);
+            if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
                 victim.setHealth(8.0);
             }
             
             // 주인 체력 감소
-            AttributeInstance killerHealthAttr = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH);
-            if (killerHealthAttr != null) {
-                double currentMaxHealth = killerHealthAttr.getBaseValue();
-                killerHealthAttr.setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+            if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
+                killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
             }
             
             // 메시지 전송
