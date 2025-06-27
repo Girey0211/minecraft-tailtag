@@ -704,15 +704,15 @@ public void onPlayerDeathForTotem(PlayerDeathEvent event) {
     Location targetLoc = target.getLocation();
     
     // 방향 벡터 계산
-    double dx = targetLoc.getX() - playerLoc.getX();
-    double dy = targetLoc.getY() - playerLoc.getY();
-    double dz = targetLoc.getZ() - playerLoc.getZ();
+    double tempDx = targetLoc.getX() - playerLoc.getX();
+    double tempDy = targetLoc.getY() - playerLoc.getY();
+    double tempDz = targetLoc.getZ() - playerLoc.getZ();
     
     // 정규화
-    double length = Math.sqrt(dx*dx + dy*dy + dz*dz);
-    dx /= length;
-    dy /= length;
-    dz /= length;
+    double length = Math.sqrt(tempDx*tempDx + tempDy*tempDy + tempDz*tempDz);
+    final double dx = tempDx / length;
+    final double dy = tempDy / length;
+    final double dz = tempDz / length;
     
     // 3초 동안 파티클 표시 (20틱 = 1초)
     final int duration = 60; // 3초 = 60틱
