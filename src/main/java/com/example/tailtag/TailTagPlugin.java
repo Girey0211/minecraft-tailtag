@@ -436,23 +436,30 @@ public void onPlayerDeath(PlayerDeathEvent event) {
         TeamColor victimColor = playerColors.get(victimUUID);
         TeamColor killerColor = playerColors.get(killerUUID);
         
+        // 실제 주인 찾기 (killer가 노예인 경우 주인을 찾음)
+        UUID actualMasterUUID = killerUUID;
+        if (slaves.containsKey(killerUUID)) {
+            actualMasterUUID = slaves.get(killerUUID);
+        }
+        Player actualMaster = Bukkit.getPlayer(actualMasterUUID);
+        
         // 올바른 색깔 순서로 잡았는지 확인
         TeamColor targetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
         
         if (targetColor == victimColor) {
             // 노예로 만들기 (새로운 노예인 경우에만)
             if (!slaves.containsKey(victimUUID)) {
-                slaves.put(victimUUID, killerUUID);
+                slaves.put(victimUUID, actualMasterUUID); // 실제 주인의 노예로 만듦
                 
                 // masters Map 초기화 확인
-                if (!masters.containsKey(killerUUID)) {
-                    masters.put(killerUUID, new HashSet<>());
+                if (!masters.containsKey(actualMasterUUID)) {
+                    masters.put(actualMasterUUID, new HashSet<>());
                 }
-                masters.get(killerUUID).add(victimUUID);
+                masters.get(actualMasterUUID).add(victimUUID);
                 
-                // 노예의 타겟을 주인의 타겟과 같게 설정
-                // 노예의 색깔을 주인의 색깔로 변경하여 같은 타겟을 갖도록 함
-                playerColors.put(victimUUID, killerColor);
+                // 노예의 색깔을 주인의 색깔로 변경
+                TeamColor masterColor = playerColors.get(actualMasterUUID);
+                playerColors.put(victimUUID, masterColor);
                 
                 // 노예 체력 제한 (4칸 = 8.0)
                 if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
@@ -460,20 +467,27 @@ public void onPlayerDeath(PlayerDeathEvent event) {
                     victim.setHealth(8.0);
                 }
                 
-                // 주인 체력 감소 (새로운 노예를 만들 때만)
-                if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
-                    double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
-                    killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
-                    killer.setHealth(Math.min(killer.getHealth(), killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue()));
+                // 실제 주인의 체력 감소 (새로운 노예를 만들 때만)
+                if (actualMaster != null && actualMaster.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                    double currentMaxHealth = actualMaster.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
+                    actualMaster.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+                    actualMaster.setHealth(Math.min(actualMaster.getHealth(), actualMaster.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue()));
                 }
                 
                 // 메시지 전송
-                victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
-                killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
+                victim.sendMessage(ChatColor.RED + actualMaster.getName() + "님의 노예가 되었습니다.");
+                if (killer.equals(actualMaster)) {
+                    killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
+                } else {
+                    killer.sendMessage(ChatColor.GREEN + victim.getName() + "님을 주인을 위해 노예로 만들었습니다.");
+                    actualMaster.sendMessage(ChatColor.GREEN + killer.getName() + "님이 " + victim.getName() + "님을 노예로 만들어주었습니다.");
+                }
             }
             
-            // 노예를 주인 위치로 텔레포트 (항상 실행)
-            victim.teleport(killer.getLocation());
+            // 노예를 실제 주인 위치로 텔레포트 (항상 실행)
+            if (actualMaster != null) {
+                victim.teleport(actualMaster.getLocation());
+            }
             
         } else if (slaves.containsKey(victimUUID) && slaves.get(victimUUID).equals(killerUUID)) {
             // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
@@ -711,17 +725,18 @@ private void handleNaturalDeath(Player victim) {
         }
     }
     
-    private Player findPlayerWithColor(TeamColor color) {
-        for (Map.Entry<UUID, TeamColor> entry : playerColors.entrySet()) {
-            if (entry.getValue() == color) {
-                Player player = Bukkit.getPlayer(entry.getKey());
-                if (player != null && player.isOnline() && !slaves.containsKey(entry.getKey())) {
-                    return player;
-                }
+  private Player findPlayerWithColor(TeamColor color) {
+    for (Map.Entry<UUID, TeamColor> entry : playerColors.entrySet()) {
+        if (entry.getValue() == color) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            // slaves.containsKey 조건 제거 - 노예도 타겟으로 찾을 수 있게 함
+            if (player != null && player.isOnline()) {
+                return player;
             }
         }
-        return null;
     }
+    return null;
+}
     
     private void showDirectionToTarget(Player player, Player target) {
     Location playerLoc = player.getLocation();
