@@ -700,29 +700,50 @@ public void onPlayerDeathForTotem(PlayerDeathEvent event) {
     }
     
     private void showDirectionToTarget(Player player, Player target) {
-        Location playerLoc = player.getLocation();
-        Location targetLoc = target.getLocation();
+    Location playerLoc = player.getLocation();
+    Location targetLoc = target.getLocation();
+    
+    // 방향 벡터 계산
+    double dx = targetLoc.getX() - playerLoc.getX();
+    double dy = targetLoc.getY() - playerLoc.getY();
+    double dz = targetLoc.getZ() - playerLoc.getZ();
+    
+    // 정규화
+    double length = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    dx /= length;
+    dy /= length;
+    dz /= length;
+    
+    // 3초 동안 파티클 표시 (20틱 = 1초)
+    final int duration = 60; // 3초 = 60틱
+    final int interval = 2; // 2틱마다 실행 (더 부드러운 효과)
+    
+    BukkitRunnable particleTask = new BukkitRunnable() {
+        int ticks = 0;
         
-        // 방향 벡터 계산
-        double dx = targetLoc.getX() - playerLoc.getX();
-        double dy = targetLoc.getY() - playerLoc.getY();
-        double dz = targetLoc.getZ() - playerLoc.getZ();
-        
-        // 정규화
-        double length = Math.sqrt(dx*dx + dy*dy + dz*dz);
-        dx /= length;
-        dy /= length;
-        dz /= length;
-        
-        // 4블럭 거리의 선분으로 표시
-        for (int i = 1; i <= 8; i++) {
-            Location particleLoc = playerLoc.clone().add(dx*i, dy*i + 1.5, dz*i);
-            player.getWorld().spawnParticle(Particle.REDSTONE, particleLoc, 1, 
-                new Particle.DustOptions(org.bukkit.Color.RED, 1.0f));
+        @Override
+        public void run() {
+            if (ticks >= duration) {
+                this.cancel();
+                return;
+            }
+            
+            // 파티클 생성
+            for (int i = 1; i <= 8; i++) {
+                Location particleLoc = playerLoc.clone().add(dx*i, dy*i + 1.5, dz*i);
+                player.getWorld().spawnParticle(Particle.REDSTONE, particleLoc, 1, 
+                    new Particle.DustOptions(org.bukkit.Color.RED, 1.5f)); // 크기도 조금 키움
+            }
+            
+            ticks += interval;
         }
-        
-        player.sendMessage(ChatColor.YELLOW + "타겟 방향을 표시했습니다!");
-    }
+    };
+    
+    // 스케줄러 실행
+    particleTask.runTaskTimer(plugin, 0L, interval); // plugin은 메인 플러그인 인스턴스
+    
+    player.sendMessage(ChatColor.YELLOW + "타겟 방향을 3초간 표시합니다!");
+}
     
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
