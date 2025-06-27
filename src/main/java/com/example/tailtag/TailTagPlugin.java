@@ -253,7 +253,8 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
             }
         }
-        
+       // 조건에 맞는 위치가 없을 경우 원래 위치 위로 리턴
+    return origin.clone().add(0.5, 1, 0.5); 
     }
     
     private TeamColor getTargetColor(TeamColor currentColor, int totalPlayers) {
