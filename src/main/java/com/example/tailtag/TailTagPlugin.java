@@ -416,59 +416,65 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 }
 
 // 플레이어 사망 이벤트에서 자동 부활 처리 (자연사만)
+// 클래스 상단에 import 추가 필요:
+// import org.bukkit.attribute.AttributeInstance;
+
 @EventHandler
-public void onPlayerDeathForTotem(PlayerDeathEvent event) {
-    Player player = event.getEntity();
-    UUID playerUUID = player.getUniqueId();
+public void onPlayerDeath(PlayerDeathEvent event) {
+    if (!gameActive) return;
     
-    // 플레이어에게 죽었는지 확인
-    if (player.getKiller() != null && player.getKiller() instanceof Player) {
-        // 다른 플레이어에게 죽었다면 자동 부활 적용하지 않음
-        return;
-    }
+    Player victim = event.getEntity();
+    Player killer = victim.getKiller();
     
-    // 노예인지 확인
-    if (slaves.containsKey(playerUUID)) {
-        // 노예인 경우: 불사의 토템 효과 없이 단순히 움직이지 못하게 함
-        event.setCancelled(true);
+    event.setDeathMessage(""); // 킬로그 숨김
+    
+    if (killer != null && killer instanceof Player) {
+        UUID victimUUID = victim.getUniqueId();
+        UUID killerUUID = killer.getUniqueId();
         
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                // HP를 최대치로 설정
-                player.setHealth(player.getMaxHealth());
-                
-                // 움직임 제한 적용 (2분)
-                frozenPlayers.put(playerUUID, 120);
-                player.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
-            }
-        }, 1L);
-        return;
-    }
-    
-    // 자유인인 경우에만 불사의 토템 효과 적용
-    // 자연사 (몬스터, 환경 데미지 등)인 경우에만 자동 부활
-    // 사망 이벤트 취소 (죽지 않게 함)
-    event.setCancelled(true);
-    
-    // 불사의 토템 효과 적용 후 커스텀 효과로 변경
-    Bukkit.getScheduler().runTaskLater(this, () -> {
-        if (player.isOnline()) {
-            // 모든 포션 효과 제거
-            for (PotionEffect effect : player.getActivePotionEffects()) {
-                player.removePotionEffect(effect.getType());
+        TeamColor victimColor = playerColors.get(victimUUID);
+        TeamColor killerColor = playerColors.get(killerUUID);
+        
+        // 올바른 색깔 순서로 잡았는지 확인
+        TeamColor targetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
+        
+        if (targetColor == victimColor) {
+            // 노예로 만들기
+            slaves.put(victimUUID, killerUUID);
+            masters.get(killerUUID).add(victimUUID);
+            
+            // 노예의 타겟을 주인의 타겟과 같게 설정
+            TeamColor masterTargetColor = getTargetColor(killerColor, Bukkit.getOnlinePlayers().size());
+            // 노예의 색깔을 주인의 타겟 색깔로 변경하여 같은 타겟을 갖도록 함
+            // (실제 구현에서는 노예의 타겟을 별도로 관리하는 것이 좋을 수 있음)
+            
+            // 노예 체력 제한 (4칸 = 8.0)
+            if (victim.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                victim.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(8.0);
+                victim.setHealth(8.0);
             }
             
-            // HP를 최대치로 설정
-            player.setHealth(player.getMaxHealth());
+            // 주인 체력 감소
+            if (killer.getAttribute(Attribute.GENERIC_MAX_HEALTH) != null) {
+                double currentMaxHealth = killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).getBaseValue();
+                killer.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(Math.max(2.0, currentMaxHealth - 2.0));
+            }
             
-            // 사용자 정의 효과만 적용 (화염 저항 1분)
-            player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
+            // 메시지 전송
+            victim.sendMessage(ChatColor.RED + killer.getName() + "님의 노예가 되었습니다.");
+            killer.sendMessage(ChatColor.GREEN + victim.getName() + "님이 노예가 되었습니다.");
             
-            // 불사의 토템 사용 효과 재생 (파티클과 사운드)
-            player.getWorld().spawnParticle(Particle.TOTEM, player.getLocation(), 30);
-            player.playSound(player.getLocation(), org.bukkit.Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
+            // 노예를 주인 위치로 텔레포트
+            victim.teleport(killer.getLocation());
         }
-    }, 1L); // 1틱 후 실행
+    } else {
+        // 자연사
+        UUID victimUUID = victim.getUniqueId();
+        deadPlayers.put(victimUUID, System.currentTimeMillis());
+        frozenPlayers.put(victimUUID, 120); // 120초
+        
+        victim.sendMessage(ChatColor.RED + "자연사로 인해 2분간 움직일 수 없습니다.");
+    }
 }
     
     private void checkFrozenPlayers() {
