@@ -1,4 +1,4 @@
-package com.example.tailtag.player;
+package com.example.tailtag.player.enums;
 
 import net.kyori.adventure.text.format.NamedTextColor;
 

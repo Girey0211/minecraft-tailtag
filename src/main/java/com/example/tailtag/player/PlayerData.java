@@ -1,7 +1,9 @@
 package com.example.tailtag.player;
 
-import org.bukkit.Bukkit;
+import com.example.tailtag.player.enums.PlayerColor;
+import com.example.tailtag.player.enums.PlayerCondition;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -25,10 +27,7 @@ public class PlayerData {
 
     public void addPlayers(List<Player> players) {
         Collections.shuffle(players);
-//        players.addAll(players);
-
         PlayerColor[] colors = PlayerColor.values();
-
         for (int i = 0; i < players.size(); i++) {
             PlayerColor color = colors[i % players.size()];
             playerMap.put(players.get(i).getUniqueId(), new TailPlayer(players.get(i), color));
@@ -38,10 +37,22 @@ public class PlayerData {
 
     public void makeSlave(UUID masterUUID, UUID slaveUUID) {
         TailPlayer masterPlayer = playerMap.get(masterUUID);
-        TailPlayer slavePlayer = playerMap.get(masterUUID);
+        TailPlayer slavePlayer = playerMap.get(slaveUUID);
 
-        List<TailPlayer> newSlaves = slavePlayer.enslave(masterPlayer);
-        masterPlayer.addSlave(slaveUUID, newSlaves);
+        List<TailPlayer> newSlaves = slavePlayer.enslave(slavePlayer);
+        Player slave = slavePlayer.getPlayer();
+        AttributeInstance victimMaxHealthAttr = slave.getAttribute(Attribute.MAX_HEALTH);
+        if (victimMaxHealthAttr != null) {
+            victimMaxHealthAttr.setBaseValue(8.0);
+            slave.setHealth(8.0);
+        }
+
+        masterPlayer.addSlave(newSlaves);
+        Player master = masterPlayer.getPlayer();
+        if (master.getAttribute(Attribute.MAX_HEALTH) != null) {
+            master.getAttribute(Attribute.MAX_HEALTH).setBaseValue(Math.max(8.0, 20.0 - 2.0 * masterPlayer.getSlaveCount()));
+            master.setHealth(Math.min(master.getHealth(), master.getAttribute(Attribute.MAX_HEALTH).getBaseValue()));
+        }
     }
 
     public TailPlayer getPlayer(@NotNull UUID uniqueId) {
@@ -89,7 +100,7 @@ public class PlayerData {
     }
 
     public boolean isStunned(UUID uuid) {
-        return playerMap.get(uuid).getState() == PlayerState.STUN;
+        return playerMap.get(uuid).getState() == PlayerCondition.STUN;
     }
 
     public List<UUID> getSurvivedPlayer() {

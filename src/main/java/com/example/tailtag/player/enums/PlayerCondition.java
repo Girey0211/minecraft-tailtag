@@ -1,14 +1,14 @@
-package com.example.tailtag.player;
+package com.example.tailtag.player.enums;
 
-public enum PlayerState {
+public enum PlayerCondition {
 
     ALIVE("생존"),
     STUN("기절"),
-    OUT("탈락");
+    OUT("탈락"); // only made by command (normal game does not have this state)
 
     private final String displayName;
 
-    PlayerState(String displayName) {
+    PlayerCondition(String displayName) {
         this.displayName = displayName;
     }
 

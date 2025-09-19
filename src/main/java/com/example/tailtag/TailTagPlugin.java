@@ -1,8 +1,7 @@
 package com.example.tailtag;
 
-import com.example.tailtag.player.PlayerColor;
+import com.example.tailtag.player.enums.PlayerColor;
 import com.example.tailtag.player.PlayerData;
-import com.example.tailtag.player.PlayerState;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;

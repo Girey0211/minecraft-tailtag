@@ -1,7 +1,8 @@
 package com.example.tailtag.player;
 
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
+import com.example.tailtag.player.enums.PlayerColor;
+import com.example.tailtag.player.enums.PlayerCondition;
+import com.example.tailtag.player.enums.PlayerRole;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,15 +15,15 @@ public class TailPlayer {
 
     private PlayerColor color;
     private TailPlayer masterPlayer;
-    private PlayerState playerState;
-    private Boolean isSlave;
+    private PlayerCondition playerCondition;
+    private PlayerRole role;
     private Long deathTime;
 
     public TailPlayer(Player player, PlayerColor color) {
         this.player = player;
         this.color = color;
-        this.playerState = PlayerState.ALIVE;
-        this.isSlave = false;
+        this.playerCondition = PlayerCondition.ALIVE;
+        this.role = PlayerRole.MASTER;
         this.deathTime = 0L;
     }
 
@@ -44,18 +45,13 @@ public class TailPlayer {
         return player.getUniqueId();
     }
 
-    public PlayerState getState() {
-        return playerState;
+    public PlayerCondition getState() {
+        return playerCondition;
     }
 
-    public void addSlave(UUID slaveUUID, List<TailPlayer> slavePlayerList) {
+    public void addSlave(List<TailPlayer> slavePlayerList) {
         for (TailPlayer newSlave : slavePlayerList) {
             slaveMap.put(newSlave.getUUID(), newSlave);
-        }
-
-        if (player.getAttribute(Attribute.MAX_HEALTH) != null) {
-            player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(Math.max(8.0, 20.0 - 2.0 * getSlaveCount()));
-            player.setHealth(Math.min(player.getHealth(), player.getAttribute(Attribute.MAX_HEALTH).getBaseValue()));
         }
     }
 
@@ -65,14 +61,8 @@ public class TailPlayer {
 
     public List<TailPlayer> enslave(TailPlayer masterPlayer) {
         this.masterPlayer = masterPlayer;
-        this.isSlave = true;
+        this.role = PlayerRole.SLAVE;
         this.color = masterPlayer.getColor();
-
-        AttributeInstance victimMaxHealthAttr = player.getAttribute(Attribute.MAX_HEALTH);
-        if (victimMaxHealthAttr != null) {
-            victimMaxHealthAttr.setBaseValue(8.0);
-            player.setHealth(8.0);
-        }
 
         List<TailPlayer> newSlaves = new ArrayList<>(slaveMap.values().stream()
                 .peek(obj -> obj.changeMaster(masterPlayer))
@@ -95,12 +85,12 @@ public class TailPlayer {
     }
 
     public void stun() {
-        playerState = PlayerState.STUN;
+        playerCondition = PlayerCondition.STUN;
         deathTime = System.currentTimeMillis();
     }
 
     public boolean getIsSlave() {
-        return isSlave;
+        return role == PlayerRole.SLAVE;
     }
 
     public long getDeathTime() {
@@ -108,11 +98,11 @@ public class TailPlayer {
     }
 
     public void unstun() {
-        playerState = PlayerState.ALIVE;
+        playerCondition = PlayerCondition.ALIVE;
         deathTime = 0L;
     }
 
     public boolean isAlive() {
-        return playerState != PlayerState.OUT && !isSlave;
+        return playerCondition != PlayerCondition.OUT && role == PlayerRole.MASTER ;
     }
 }
