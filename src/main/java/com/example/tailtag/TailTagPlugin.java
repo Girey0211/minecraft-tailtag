@@ -1,12 +1,14 @@
 package com.example.tailtag;
 
+import com.example.tailtag.player.PlayerColor;
+import com.example.tailtag.player.PlayerData;
+import com.example.tailtag.player.PlayerState;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -32,50 +34,13 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     public static final String name = "TailTag";
     public static final String version = "1.0";
 
-    private final Map<UUID, TeamColor> playerColors = new HashMap<>();
-    private final Map<UUID, UUID> slaves = new HashMap<>(); // 노예 UUID -> 주인 UUID
-    private final Map<UUID, Set<UUID>> masters = new HashMap<>(); // 주인 UUID -> 노예들 Set
-    private final Map<UUID, Long> deadPlayers = new HashMap<>(); // 자연사한 플레이어와 사망 시간
-    private final Map<UUID, Integer> frozenPlayers = new HashMap<>(); // 움직일 수 없는 플레이어
+    private final PlayerData playerData = new PlayerData();
     private boolean gameActive = false;
     private Location gameCenter;
     private final int GAME_AREA_SIZE = 20; // 20청크
     private BukkitTask gameTask;
     private BukkitTask heartbeatTask;
 
-    public enum TeamColor {
-        RED(NamedTextColor.RED, "빨강"),
-        ORANGE(NamedTextColor.GOLD, "주황"),
-        YELLOW(NamedTextColor.YELLOW, "노랑"),
-        GREEN(NamedTextColor.GREEN, "초록"),
-        BLUE(NamedTextColor.BLUE, "파랑"),
-        INDIGO(NamedTextColor.DARK_BLUE, "남색"),
-        PURPLE(NamedTextColor.DARK_PURPLE, "보라"),
-        PINK(NamedTextColor.LIGHT_PURPLE, "핑크"),
-        GRAY(NamedTextColor.GRAY, "회색"),
-        BLACK(NamedTextColor.BLACK, "검정");
-
-        private final NamedTextColor chatColor;
-        private final String displayName;
-
-        TeamColor(NamedTextColor chatColor, String displayName) {
-            this.chatColor = chatColor;
-            this.displayName = displayName;
-        }
-
-        public NamedTextColor getNamedTextColor() {
-            return chatColor;
-        }
-
-        public String getDisplayName() {
-            return displayName;
-        }
-
-        public TeamColor next() {
-            TeamColor[] vals = values();
-            return vals[(this.ordinal() + 1) % vals.length];
-        }
-    }
 
     @Override
     public void onEnable() {
@@ -138,6 +103,8 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     }
 
     private void startGame(Player commander) {
+
+        // region start exception
         if (gameActive) {
             SendMessage.sendMessagePlayer(
                     commander,
@@ -162,19 +129,19 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             );
             return;
         }
+        // endregion
 
         gameActive = true;
         gameCenter = commander.getLocation();
 
-        // 플레이어 색깔 배정
-        assignColors(new ArrayList<>(onlinePlayers));
+        // set player data
+        playerData.addPlayers(new ArrayList<>(onlinePlayers));
 
-        // 플레이어 스폰
         spawnPlayers(new ArrayList<>(onlinePlayers));
 
-        // 게임 시작 안내
+        // send "game start" message
         for (Player player : onlinePlayers) {
-            TeamColor color = playerColors.get(player.getUniqueId());
+            PlayerColor color = playerData.getPlayerColor(player.getUniqueId());
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("게임이 시작되었습니다!", NamedTextColor.GREEN)
@@ -187,7 +154,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                             .append(Component.text("입니다."))
             );
 
-            TeamColor targetColor = getTargetColor(color, onlinePlayers.size());
+            PlayerColor targetColor = color.next();
             if (targetColor != null) {
                 SendMessage.sendMessagePlayer(
                         player,
@@ -197,7 +164,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 );
             }
 
-            // 인벤토리 저장
             saveInventory(player);
         }
 
@@ -221,11 +187,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         }
 
         // 데이터 초기화
-        playerColors.clear();
-        slaves.clear();
-        masters.clear();
-        deadPlayers.clear();
-        frozenPlayers.clear();
+        playerData.clear();
 
         if (gameTask != null) {
             gameTask.cancel();
@@ -240,17 +202,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 commander,
                 Component.text("게임이 리셋되었습니다.", NamedTextColor.GREEN)
         );
-    }
-
-    private void assignColors(List<Player> players) {
-        Collections.shuffle(players);
-        TeamColor[] colors = TeamColor.values();
-
-        for (int i = 0; i < players.size(); i++) {
-            TeamColor color = colors[i % players.size()];
-            playerColors.put(players.get(i).getUniqueId(), color);
-            masters.put(players.get(i).getUniqueId(), new HashSet<>());
-        }
     }
 
     private void spawnPlayers(List<Player> players) {
@@ -299,17 +250,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         return new Location(world, x + 0.5, 65, z + 0.5);
     }
 
-    private TeamColor getTargetColor(TeamColor currentColor, int totalPlayers) {
-        TeamColor[] colors = Arrays.copyOf(TeamColor.values(), totalPlayers);
-
-        for (int i = 0; i < colors.length; i++) {
-            if (colors[i] == currentColor) {
-                return colors[(i + 1) % colors.length];
-            }
-        }
-        return null;
-    }
-
     private void saveInventory(Player player) {
         // 인벤토리 완전 초기화
         player.getInventory().clear();
@@ -350,12 +290,11 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             public void run() {
                 if (!gameActive) return;
 
+                updatePlayerData();
                 checkGameEnd();
-                checkSlaveDistance();
-                checkDeadPlayers();
-                checkFrozenPlayers();
+                playerData.updateSlave();
+                playerData.updateStunnedPlayer();
                 updateDragonEggEffects();
-                updateSlaveEffects();
             }
         }.runTaskTimer(this, 20L, 20L);
 
@@ -369,21 +308,17 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 20L, 20L);
     }
 
+    private void updatePlayerData() {
+        playerData.updatePlayerState();
+    }
+
     private void checkGameEnd() {
         if (!gameActive) return;
 
-        Set<UUID> activeMasters = new HashSet<>();
-        for (Map.Entry<UUID, Set<UUID>> entry : masters.entrySet()) {
-            UUID masterUUID = entry.getKey();
-            Player master = Bukkit.getPlayer(masterUUID);
+        List<UUID> survivedPlayerList = playerData.getSurvivedPlayer();
 
-            if (master != null && master.isOnline() && !slaves.containsKey(masterUUID)) {
-                activeMasters.add(masterUUID);
-            }
-        }
-
-        if (activeMasters.size() == 1) {
-            UUID winnerUUID = activeMasters.iterator().next();
+        if (survivedPlayerList.size() == 1) {
+            UUID winnerUUID = survivedPlayerList.getFirst();
             Player winner = Bukkit.getPlayer(winnerUUID);
 
             if (winner != null) {
@@ -401,60 +336,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                         resetGame(winner);
                     }
                 }.runTaskLater(this, 60L);
-            }
-        }
-    }
-
-    private void checkSlaveDistance() {
-        for (Map.Entry<UUID, UUID> entry : slaves.entrySet()) {
-            UUID slaveUUID = entry.getKey();
-            UUID masterUUID = entry.getValue();
-
-            Player slave = Bukkit.getPlayer(slaveUUID);
-            Player master = Bukkit.getPlayer(masterUUID);
-
-            if (slave != null && master != null && slave.isOnline() && master.isOnline()) {
-                double distance = slave.getLocation().distance(master.getLocation());
-
-                if (distance > 30) {
-                    // 노예에게 데미지
-                    slave.damage(1.0); // 0.5 하트 데미지
-
-                    if (slave.getHealth() <= 0) {
-                        slave.teleport(master.getLocation());
-                        slave.setHealth(slave.getAttribute(Attribute.MAX_HEALTH).getValue());
-                    }
-                }
-            }
-        }
-    }
-
-    private void checkDeadPlayers() {
-        Iterator<Map.Entry<UUID, Long>> iterator = deadPlayers.entrySet().iterator();
-
-        while (iterator.hasNext()) {
-            Map.Entry<UUID, Long> entry = iterator.next();
-            UUID playerUUID = entry.getKey();
-            long deathTime = entry.getValue();
-
-            if (System.currentTimeMillis() - deathTime >= 120000) { // 2분
-                Player player = Bukkit.getPlayer(playerUUID);
-                if (player != null && player.isOnline()) {
-                    // 모든 포션 효과 제거
-                    for (PotionEffect effect : player.getActivePotionEffects()) {
-                        player.removePotionEffect(effect.getType());
-                    }
-
-                    // HP를 최대치로 설정
-                    player.setHealth(20);
-                    player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
-
-                    // 사용자 정의 효과만 적용 (화염 저항 1분)
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 1200, 0));
-
-                    frozenPlayers.remove(playerUUID);
-                }
-                iterator.remove();
             }
         }
     }
@@ -479,15 +360,14 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 
         if (removeFrozen) {
             // 노예가 주인에게 죽은 경우 - 움직임 제한 해제
-            frozenPlayers.remove(playerUUID);
+            playerData.unstun(playerUUID);
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("주인말을 잘 들으십쇼.", NamedTextColor.GREEN)
             );
         } else {
             // 자연사의 경우 - 2분간 움직임 제한
-            deadPlayers.put(playerUUID, System.currentTimeMillis());
-            frozenPlayers.put(playerUUID, 120); // 120초
+            playerData.stun(playerUUID);
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("2분간 움직일 수 없습니다.", NamedTextColor.RED)
@@ -498,56 +378,11 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, player.getLocation(), 30);
         player.playSound(player.getLocation(), Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
     }
-
-    private void handleNaturalDeath(Player victim) {
-        UUID victimUUID = victim.getUniqueId();
-        deadPlayers.put(victimUUID, System.currentTimeMillis());
-        frozenPlayers.put(victimUUID, 120); // 120초
-
-        SendMessage.sendMessagePlayer(
-                victim,
-                Component.text("자연사로 인해 2분간 움직일 수 없습니다.", NamedTextColor.RED)
-        );
-    }
-
-    private void checkFrozenPlayers() {
-        Iterator<Map.Entry<UUID, Integer>> iterator = frozenPlayers.entrySet().iterator();
-
-        while (iterator.hasNext()) {
-            Map.Entry<UUID, Integer> entry = iterator.next();
-            UUID playerUUID = entry.getKey();
-            int timeLeft = entry.getValue() - 1;
-
-            if (timeLeft <= 0) {
-                iterator.remove();
-            } else {
-                frozenPlayers.put(playerUUID, timeLeft);
-
-                // 플레이어 이동 제한
-                Player player = Bukkit.getPlayer(playerUUID);
-                if (player != null && player.isOnline()) {
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 25, 255, false, false));
-                    player.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, 25, -10, false, false));
-                }
-            }
-        }
-    }
-
     private void updateDragonEggEffects() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (player.getInventory().contains(Material.DRAGON_EGG)) {
                 player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 25, 1, false, false));
                 player.addPotionEffect(new PotionEffect(PotionEffectType.INSTANT_DAMAGE, 25, 0, false, false));
-            }
-        }
-    }
-
-    private void updateSlaveEffects() {
-        for (UUID slaveUUID : slaves.keySet()) {
-            Player slave = Bukkit.getPlayer(slaveUUID);
-            if (slave != null && slave.isOnline()) {
-                // 노예에게 나약함 2 효과 지속 부여
-                slave.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 25, 1, false, false));
             }
         }
     }
@@ -558,54 +393,34 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
 
             UUID playerUUID = player.getUniqueId();
 
-            if (slaves.containsKey(playerUUID)) {
-                // 노예인 경우 주인과의 거리 표시
-                UUID masterUUID = slaves.get(playerUUID);
-                Player master = Bukkit.getPlayer(masterUUID);
+            if (playerData.isSlave(playerUUID)) {
+                // if player is slave, show distance between master and slave to player
+                Player master = playerData.getMasterPlayer(playerUUID);
 
                 if (master != null && master.isOnline()) {
                     double distance = player.getLocation().distance(master.getLocation());
 
                     player.sendActionBar(
-                            Component.text("주인과의 거리: ", NamedTextColor.YELLOW)
-                                    .append(Component.text((int) distance))
-                                    .append(Component.text("블럭"))
+                        Component.text("주인과의 거리: ", NamedTextColor.YELLOW)
+                            .append(Component.text((int) distance))
+                            .append(Component.text("블럭"))
                     );
                 }
             } else {
-                // 주인인 경우 추적자 감지
-                TeamColor playerColor = playerColors.get(playerUUID);
+                // detect nearby hunter
+                PlayerColor playerColor = playerData.getPlayerColor(playerUUID);
                 if (playerColor != null) {
-                    TeamColor hunterColor = getHunterColor(playerColor, Bukkit.getOnlinePlayers().size());
+                    PlayerColor hunterColor = playerColor.prev();
 
-                    if (hunterColor != null) {
-                        for (Player other : Bukkit.getOnlinePlayers()) {
-                            TeamColor otherColor = playerColors.get(other.getUniqueId());
-
-                            if (otherColor == hunterColor && !slaves.containsKey(other.getUniqueId())) {
-                                double distance = player.getLocation().distance(other.getLocation());
-
-                                if (distance <= 30) {
-                                    player.sendActionBar(Component.text("❤", NamedTextColor.RED));
-                                    break;
-                                }
-                            }
-                        }
+                    Player hunter = playerData.getPlayerByColor(hunterColor);
+                    double distance = player.getLocation().distance(hunter.getLocation());
+                    if (distance <= 30) {
+                        player.sendActionBar(Component.text("❤", NamedTextColor.RED));
+                        // 사운드 로직 추가
                     }
                 }
             }
         }
-    }
-
-    private TeamColor getHunterColor(TeamColor currentColor, int totalPlayers) {
-        TeamColor[] colors = Arrays.copyOf(TeamColor.values(), totalPlayers);
-
-        for (int i = 0; i < colors.length; i++) {
-            if (colors[i] == currentColor) {
-                return colors[(i - 1 + colors.length) % colors.length];
-            }
-        }
-        return null;
     }
 
     @EventHandler
@@ -626,51 +441,25 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                     if (finalHealth <= 0) {
                         event.setCancelled(true); // 죽음 방지
 
-                        TeamColor victimColor = playerColors.get(victimUUID);
-                        TeamColor attackerColor = playerColors.get(attackerUUID);
+                        PlayerColor victimColor = playerData.getPlayerColor(victimUUID);
+                        PlayerColor attackerColor = playerData.getPlayerColor(attackerUUID);
 
                         // 실제 주인 찾기 (killer가 노예인 경우 주인을 찾음)
-                        UUID actualMasterUUID = attackerUUID;
-                        if (slaves.containsKey(attackerUUID)) {
-                            actualMasterUUID = slaves.get(attackerUUID);
-                        }
-                        Player actualMaster = Bukkit.getPlayer(actualMasterUUID);
+                        Player actualMaster = playerData.getMasterPlayer(attackerUUID);
+                        UUID actualMasterUUID = actualMaster.getUniqueId();
 
                         // 올바른 색깔 순서로 잡았는지 확인
-                        TeamColor targetColor = getTargetColor(attackerColor, Bukkit.getOnlinePlayers().size());
+                        PlayerColor targetColor = attackerColor.next();
 
                         if (targetColor == victimColor) {
                             // 노예로 만들기 (새로운 노예인 경우에만)
-                            if (!slaves.containsKey(victimUUID)) {
-                                slaves.put(victimUUID, actualMasterUUID); // 실제 주인의 노예로 만듦
-
-                                // masters Map 초기화 확인
-                                if (!masters.containsKey(actualMasterUUID)) {
-                                    masters.put(actualMasterUUID, new HashSet<>());
-                                }
-                                masters.get(actualMasterUUID).add(victimUUID);
-
-                                // 노예의 색깔을 주인의 색깔로 변경
-                                TeamColor masterColor = playerColors.get(actualMasterUUID);
-
-                                // 노예 체력 제한 (4칸 = 8.0)
-                                AttributeInstance victimMaxHealthAttr = victim.getAttribute(Attribute.MAX_HEALTH);
-                                if (victimMaxHealthAttr != null) {
-                                    victimMaxHealthAttr.setBaseValue(8.0);
-                                    victim.setHealth(8.0);
-                                }
-
-                                // 실제 주인의 체력 감소 (새로운 노예를 만들 때만)
-                                if (actualMaster != null && actualMaster.getAttribute(Attribute.MAX_HEALTH) != null) {
-                                    double currentMaxHealth = actualMaster.getAttribute(Attribute.MAX_HEALTH).getBaseValue();
-                                    actualMaster.getAttribute(Attribute.MAX_HEALTH).setBaseValue(Math.max(8.0, currentMaxHealth - 2.0));
-                                    actualMaster.setHealth(Math.min(actualMaster.getHealth(), actualMaster.getAttribute(Attribute.MAX_HEALTH).getBaseValue()));
-                                }
+                            if (!playerData.isSlave(victimUUID)) {
+                                playerData.makeSlave(actualMasterUUID, victimUUID);
 
                                 // 메시지 전송
                                 SendMessage.sendMessagePlayer(
                                         victim,
-                                        Component.text(actualMaster.getName() + "님의 노예가 되었습니다.", NamedTextColor.RED)
+                                        Component.text(actualMaster.getPlayer().getName() + "님의 노예가 되었습니다.", NamedTextColor.RED)
                                 );
                                 if (attacker.equals(actualMaster)) {
                                     SendMessage.sendMessagePlayer(
@@ -683,25 +472,21 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                                             Component.text(victim.getName() + "님을 주인을 위해 노예로 만들었습니다.", NamedTextColor.GREEN)
                                     );
                                     SendMessage.sendMessagePlayer(
-                                            actualMaster,
+                                            actualMaster.getPlayer(),
                                             Component.text(attacker.getName() + "님이 " + victim.getName() + "님을 노예로 만들어주었습니다.", NamedTextColor.GREEN)
                                     );
                                 }
                             }
 
                             // 노예를 실제 주인 위치로 텔레포트 (항상 실행)
-                            if (actualMaster != null) {
-                                victim.teleport(actualMaster.getLocation());
-                            }
+                            victim.teleport(actualMaster.getLocation());
 
-                        } else if (slaves.containsKey(victimUUID) && slaves.get(victimUUID).equals(attackerUUID)) {
+                        } else if (playerData.isSlave(victimUUID) && playerData.isMaster(attackerUUID, victimUUID)) {
                             // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
                             useTotemOfUndying(victim, true); // 움직임 제한 해제
-
                         } else {
                             // 주인-노예 관계나 쫓고 쫓기는 관계가 아닌 경우 - 자연사 처리
-                            deadPlayers.put(victimUUID, System.currentTimeMillis());
-                            frozenPlayers.put(victimUUID, 120); // 120초
+                            playerData.deadNaturally(victimUUID);
 
                             SendMessage.sendMessagePlayer(
                                     victim,
@@ -709,10 +494,9 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                             );
                         }
 
-                    } else if (slaves.containsKey(attackerUUID)) {
+                    } else if (playerData.isSlave(attackerUUID)) {
                         // 노예가 주인을 공격하려는 경우
-                        UUID masterUUID = slaves.get(attackerUUID);
-                        if (masterUUID.equals(victimUUID)) {
+                        if (playerData.isMaster(victimUUID, attackerUUID)) {
                             event.setCancelled(true);
                             SendMessage.sendMessagePlayer(
                                     attacker,
@@ -721,13 +505,13 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                         }
                     }
                 } else {
-                    if (frozenPlayers.containsKey(playerUUID))
+                    if (playerData.isStunned(playerUUID))
                         event.setCancelled(true);
                     cancelDeathEvent(event, victim);
                 }
             } else {
                 // 자연사
-                if (frozenPlayers.containsKey(playerUUID))
+                if (playerData.isStunned(playerUUID))
                     event.setCancelled(true);
                 cancelDeathEvent(event, victim);
             }
@@ -743,59 +527,33 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         if (event.getHand() != EquipmentSlot.HAND) {
             return;
         }
-        if (item != null && item.getType() == Material.DIAMOND &&
-                (event.getAction().name().contains("RIGHT_CLICK"))) {
-
+        if (item != null && item.getType() == Material.DIAMOND && (event.getAction().name().contains("RIGHT_CLICK"))) {
             UUID playerUUID = player.getUniqueId();
-            TeamColor playerColor = playerColors.get(playerUUID);
-            TeamColor currentColor = playerColor;
+            Player targetPlayer = playerData.getTargetPlayer(playerUUID);
 
-            while (true) {
-                TeamColor nextColor = currentColor.next();
-                OfflinePlayer target = findPlayerWithColor(player, nextColor);
+            if (!targetPlayer.isOnline()) {
+                SendMessage.sendMessagePlayer(
+                        player,
+                        Component.text("타겟이 오프라인 상태입니다.", NamedTextColor.RED)
+                );
+            } else if (!targetPlayer.getWorld().equals(player.getWorld())) {
+                SendMessage.sendMessagePlayer(
+                        player,
+                        Component.text("타겟이 같은 월드에 존재하지 않습니다.", NamedTextColor.RED)
+                );
+            } else {
 
-                if (target == null || slaves.containsKey(target.getUniqueId()) || playerColor == nextColor) {
-                    currentColor = nextColor;
-                    continue;
-                }
-
-                if (!target.isOnline()) {
-                    SendMessage.sendMessagePlayer(
-                            player,
-                            Component.text("타겟이 오프라인 상태입니다.", NamedTextColor.RED)
-                    );
-                    break;
-                } else if (!target.getPlayer().getWorld().equals(player.getWorld())) {
-                    SendMessage.sendMessagePlayer(
-                            player,
-                            Component.text("타겟이 같은 월드에 존재하지 않습니다.", NamedTextColor.RED)
-                    );
-                    break;
-                }
-                // 수동 다이아 소모
                 if (item.getAmount() > 1) {
                     item.setAmount(item.getAmount() - 1);
                 } else {
-                    // 아이템이 1개면 제거
                     player.getInventory().removeItem(item);
                 }
 
-                // 인벤토리 업데이트 (안전하게)
                 player.updateInventory();
                 // 방향 표시
-                showDirectionToTarget(player, target.getPlayer());
-                break;
+                showDirectionToTarget(player, targetPlayer);
             }
         }
-    }
-
-    private OfflinePlayer findPlayerWithColor(Player sender, TeamColor color) {
-        for (Map.Entry<UUID, TeamColor> entry : playerColors.entrySet()) {
-            if (entry.getValue() == color) {
-                return Bukkit.getOfflinePlayer(entry.getKey());
-            }
-        }
-        return null;
     }
 
     private void showDirectionToTarget(Player player, Player target) {
