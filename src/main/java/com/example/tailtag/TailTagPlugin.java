@@ -586,7 +586,10 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                                 double distance = player.getLocation().distance(other.getLocation());
 
                                 if (distance <= 30) {
+                                    // Heartbeat Sound 및 ActionBar 표시
+                                    Location loc = player.getLocation();
                                     player.sendActionBar(Component.text("❤", NamedTextColor.RED));
+                                    player.playSound(loc, Sound.ENTITY_WARDEN_HEARTBEAT, 0.5f, 1.0f);
                                     break;
                                 }
                             }
