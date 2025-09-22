@@ -14,7 +14,7 @@ import java.util.*;
 // 좀 짬뽕이긴 한데 일단 개발 하고
 // 후에 db겸 구현체로써 더 다듬을 예정
 // 기본적으로 main <-> PlayerData(Service와 같은 구현체) <-> TailPlayer(유사 DAO느낌)
-// main은 uuid만 사용하여 플로우만 관리하는 방향으로 하고싶음(가능하면)
+// main은 uniqueId만 사용하여 플로우만 관리하는 방향으로 하고싶음(가능하면)
 // PlayerData에서 메인 로직 관리
 public class PlayerData {
 
@@ -62,8 +62,8 @@ public class PlayerData {
         return playerMap.get(uniqueId);
     }
 
-    public Player getMasterPlayer(UUID uuid) {
-        return playerMap.get(uuid).getMaster().getPlayer();
+    public Player getMasterPlayer(UUID uniqueId) {
+        return playerMap.get(uniqueId).getMaster().getPlayer();
     }
 
     public PlayerColor getPlayerColor(@NotNull UUID uniqueId) {
@@ -77,15 +77,8 @@ public class PlayerData {
         clearLists();
     }
 
-    private void clearLists() {
-        survivedPlayers.clear();
-        slavePlayers.clear();
-        stunnedPlayers.clear();
-        outPlayers.clear();
-    }
-
-    public boolean isSlave(UUID uuid) {
-        return playerMap.get(uuid).getIsSlave();
+    public boolean isSlave(UUID uniqueId) {
+        return playerMap.get(uniqueId).getIsSlave();
     }
 
     /**
@@ -98,13 +91,13 @@ public class PlayerData {
         return getMasterPlayer(slaveUUID).getUniqueId().equals(masterUUID);
     }
 
-    public void deadNaturally(UUID uuid) {
-        TailPlayer player = playerMap.get(uuid);
+    public void deadNaturally(UUID uniqueId) {
+        TailPlayer player = playerMap.get(uniqueId);
         player.stun();
     }
 
-    public boolean isStunned(UUID uuid) {
-        return playerMap.get(uuid).getState() == PlayerCondition.STUN;
+    public boolean isStunned(UUID uniqueId) {
+        return playerMap.get(uniqueId).getState() == PlayerCondition.STUN;
     }
 
     public List<UUID> getSurvivedPlayer() {
@@ -112,8 +105,8 @@ public class PlayerData {
     }
 
     public void updateSlave() {
-        for (UUID uuid : slavePlayers) {
-            TailPlayer player = playerMap.get(uuid);
+        for (UUID uniqueId : slavePlayers) {
+            TailPlayer player = playerMap.get(uniqueId);
             Player slave = player.getPlayer();
             Player master = player.getMaster().getPlayer();
 
@@ -140,8 +133,8 @@ public class PlayerData {
     }
 
     public void updateStunnedPlayer() {
-        for (UUID uuid : stunnedPlayers) {
-            TailPlayer stunnedPlayer = playerMap.get(uuid);
+        for (UUID uniqueId : stunnedPlayers) {
+            TailPlayer stunnedPlayer = playerMap.get(uniqueId);
             Player player = stunnedPlayer.getPlayer();
 
             long deathDuration = System.currentTimeMillis() - stunnedPlayer.getDeathTime();
@@ -164,28 +157,32 @@ public class PlayerData {
     public void updatePlayerState() {
         clearLists();
         for (Map.Entry<UUID, TailPlayer> entry : playerMap.entrySet()) {
-            UUID uuid = entry.getKey();
+            UUID uniqueId = entry.getKey();
             TailPlayer player = entry.getValue();
 
-            if (player.getIsSlave()) slavePlayers.add(uuid);
-            else survivedPlayers.add(uuid);
+            if (player.isAlive()) survivedPlayers.add(uniqueId);
+            else if (player.getIsSlave()) slavePlayers.add(uniqueId);
             switch (player.getState()) {
-                case STUN -> stunnedPlayers.add(uuid);
-                case OUT -> outPlayers.add(uuid);
+                case STUN -> stunnedPlayers.add(uniqueId);
+                case OUT -> outPlayers.add(uniqueId);
             }
         }
     }
 
-    public Player getPlayerByColor(PlayerColor hunterColor) {
-        return originalColorMap.get(hunterColor).getPlayer();
+    public Player getPlayerByColor(PlayerColor color) {
+        return originalColorMap.get(color).getPlayer();
     }
 
-    private TailPlayer getTailPlayerByColor(PlayerColor hunterColor) {
-        return originalColorMap.get(hunterColor);
+    public void unstun(UUID uniqueId) {
+        playerMap.get(uniqueId).unstun();
     }
 
-    public Player getTargetPlayer(UUID uuid) {
-        PlayerColor nowColor = playerMap.get(uuid).getColor().next();
+    public void stun(UUID uniqueId) {
+        playerMap.get(uniqueId).stun();
+    }
+
+    public Player getTargetPlayer(UUID uniqueId) {
+        PlayerColor nowColor = playerMap.get(uniqueId).getColor().next();
         Player target = null;
         while (target == null) {
             if (isColorEliminated(nowColor)) {
@@ -196,30 +193,9 @@ public class PlayerData {
         }
         return target;
     }
-
-    public void unstun(UUID uuid) {
-        playerMap.get(uuid).unstun();
-    }
-
-    public void stun(UUID uuid) {
-        playerMap.get(uuid).stun();
-    }
-
-    public Player getTargetPlayer(PlayerColor playerColor) {
-        PlayerColor nowColor = playerColor.next();
-        Player target = null;
-        while (target == null) {
-            if (isColorEliminated(nowColor)) {
-                nowColor = nowColor.next();
-                continue;
-            }
-            target = getTailPlayerByColor(nowColor).getPlayer();
-        }
-        return target;
-    }
-
-    public Player getHunterPlayer(UUID uuid) {
-        PlayerColor nowColor = playerMap.get(uuid).getColor().prev();
+    
+    public Player getHunterPlayer(UUID uniqueId) {
+        PlayerColor nowColor = playerMap.get(uniqueId).getColor().prev();
         Player hunter = null;
         while (hunter == null) {
             if (isColorEliminated(nowColor)) {
@@ -231,6 +207,17 @@ public class PlayerData {
         return hunter;
     }
 
+    private TailPlayer getTailPlayerByColor(PlayerColor hunterColor) {
+        return originalColorMap.get(hunterColor);
+    }
+
+    private void clearLists() {
+        survivedPlayers.clear();
+        slavePlayers.clear();
+        stunnedPlayers.clear();
+        outPlayers.clear();
+    }
+    
     private boolean isColorEliminated(PlayerColor color) {
         return colorMap.get(color);
     }

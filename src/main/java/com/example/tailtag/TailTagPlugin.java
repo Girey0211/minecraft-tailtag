@@ -321,12 +321,12 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             Player winner = Bukkit.getPlayer(winnerUUID);
 
             if (winner != null) {
-                for (Player player : Bukkit.getOnlinePlayers()) {
-                    player.showTitle(Title.title(
-                            Component.text(winner.getName(), NamedTextColor.GOLD)
-                                    .append(Component.text("님이 승리하셨습니다!")),
-                            Component.text(""), 10, 70, 20));
-                }
+                SendMessage.broadcastMessage(
+                        Component.text(
+                                winner.getName(), NamedTextColor.GOLD)
+                                .append(Component.text("님이 승리하셨습니다!")
+                                )
+                );
 
                 // 게임 종료 후 3초 뒤 리셋
                 new BukkitRunnable() {

@@ -12,9 +12,9 @@ public class TailPlayer {
 
     private final Player player;
     private final Map<UUID, TailPlayer> slaveMap = new HashMap<>();
+    private TailPlayer masterPlayer;
 
     private PlayerColor color;
-    private TailPlayer masterPlayer;
     private PlayerCondition playerCondition;
     private PlayerRole role;
     private Long deathTime;
@@ -76,8 +76,8 @@ public class TailPlayer {
         this.color = masterPlayer.getColor();
     }
 
-    public boolean isMaster(UUID uuid) {
-        return uuid.equals(player.getUniqueId());
+    public boolean isMaster(UUID uniqueId) {
+        return uniqueId.equals(player.getUniqueId());
     }
 
     public boolean isMaster(TailPlayer player) {
