@@ -349,9 +349,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     private void useTotemOfUndying(Player player, boolean removeFrozen) {
         UUID playerUUID = player.getUniqueId();
 
-        // 불사의 토템 효과 적용
-        player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue()); // 풀피로 회복
-
         // 기존 포션 효과 모두 제거 (불사의 토템 버프 제거)
         for (PotionEffect effect : player.getActivePotionEffects()) {
             player.removePotionEffect(effect.getType());
@@ -369,11 +366,12 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
             playerData.stun(playerUUID);
             SendMessage.sendMessagePlayer(
                     player,
-                    Component.text("2분간 움직일 수 없습니다.", NamedTextColor.RED)
+                    Component.text("기절되어 2분동안 움직일 수 없습니다.", NamedTextColor.RED)
             );
         }
 
-        // 불사의 토템 효과 시각적 표시
+        // 불사의 토템 효과
+        player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue()); // 풀피로 회복
         player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, player.getLocation(), 30);
         player.playSound(player.getLocation(), Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
     }
@@ -409,9 +407,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 // detect nearby hunter
                 PlayerColor playerColor = playerData.getPlayerColor(playerUUID);
                 if (playerColor != null) {
-                    PlayerColor hunterColor = playerColor.prev();
-
-                    Player hunter = playerData.getPlayerByColor(hunterColor);
+                    Player hunter = playerData.getHunterPlayer(playerUUID);
                     double distance = player.getLocation().distance(hunter.getLocation());
                     if (distance <= 30) {
                         player.sendActionBar(Component.text("❤", NamedTextColor.RED));
@@ -425,96 +421,98 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
         if (!gameActive) return;
+        if (!(event.getEntity() instanceof Player victim)) return;
 
-        if (event.getEntity() instanceof Player victim) {
-            UUID playerUUID = victim.getUniqueId();
+        UUID playerUUID = victim.getUniqueId();
 
-            if (event instanceof EntityDamageByEntityEvent entityEvent) {
-                // 엔티티 공격
-                if (entityEvent.getDamager() instanceof Player attacker) {
-                    UUID attackerUUID = attacker.getUniqueId();
-                    UUID victimUUID = victim.getUniqueId();
-                    double finalHealth = victim.getHealth() - event.getFinalDamage();
+        if (!(event instanceof EntityDamageByEntityEvent entityEvent)) {
+            if (playerData.isStunned(playerUUID))
+                event.setCancelled(true);
+            cancelDeathEvent(event, victim);
+            return;
+        }
+            // entity damage
+        if (entityEvent.getDamager() instanceof Player attacker) {
+            // player damage
+            UUID attackerUUID = attacker.getUniqueId();
+            UUID victimUUID = victim.getUniqueId();
+            double finalHealth = victim.getHealth() - event.getFinalDamage();
 
-                    // 탈락 로직
-                    if (finalHealth <= 0) {
-                        event.setCancelled(true); // 죽음 방지
+            // make slave
+            if (finalHealth <= 0) {
+                // player kill player
+                event.setCancelled(true);
 
-                        PlayerColor victimColor = playerData.getPlayerColor(victimUUID);
-                        PlayerColor attackerColor = playerData.getPlayerColor(attackerUUID);
+                PlayerColor victimColor = playerData.getPlayerColor(victimUUID);
+                PlayerColor attackerColor = playerData.getPlayerColor(attackerUUID);
 
-                        // 실제 주인 찾기 (killer가 노예인 경우 주인을 찾음)
-                        Player actualMaster = playerData.getMasterPlayer(attackerUUID);
-                        UUID actualMasterUUID = actualMaster.getUniqueId();
+                // 실제 주인 찾기 (killer가 노예인 경우 주인을 찾음)
+                Player actualMaster = playerData.getMasterPlayer(attackerUUID);
+                UUID actualMasterUUID = actualMaster.getUniqueId();
 
-                        // 올바른 색깔 순서로 잡았는지 확인
-                        PlayerColor targetColor = attackerColor.next();
+                // 올바른 색깔 순서로 잡았는지 확인
+                Player targetPlayer = playerData.getTargetPlayer(actualMasterUUID);
 
-                        if (targetColor == victimColor) {
-                            // 노예로 만들기 (새로운 노예인 경우에만)
-                            if (!playerData.isSlave(victimUUID)) {
-                                playerData.makeSlave(actualMasterUUID, victimUUID);
+                if (targetPlayer.getUniqueId().equals(victimUUID)) {
+                    // make slave
+                    if (!playerData.isSlave(victimUUID)) {
+                        playerData.makeSlave(actualMasterUUID, victimUUID);
 
-                                // 메시지 전송
-                                SendMessage.sendMessagePlayer(
-                                        victim,
-                                        Component.text(actualMaster.getPlayer().getName() + "님의 노예가 되었습니다.", NamedTextColor.RED)
-                                );
-                                if (attacker.equals(actualMaster)) {
-                                    SendMessage.sendMessagePlayer(
-                                            attacker,
-                                            Component.text(victim.getName() + "님이 노예가 되었습니다.", NamedTextColor.GREEN)
-                                    );
-                                } else {
-                                    SendMessage.sendMessagePlayer(
-                                            attacker,
-                                            Component.text(victim.getName() + "님을 주인을 위해 노예로 만들었습니다.", NamedTextColor.GREEN)
-                                    );
-                                    SendMessage.sendMessagePlayer(
-                                            actualMaster.getPlayer(),
-                                            Component.text(attacker.getName() + "님이 " + victim.getName() + "님을 노예로 만들어주었습니다.", NamedTextColor.GREEN)
-                                    );
-                                }
-                            }
-
-                            // 노예를 실제 주인 위치로 텔레포트 (항상 실행)
-                            victim.teleport(actualMaster.getLocation());
-
-                        } else if (playerData.isSlave(victimUUID) && playerData.isMaster(attackerUUID, victimUUID)) {
-                            // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
-                            useTotemOfUndying(victim, true); // 움직임 제한 해제
-                        } else {
-                            // 주인-노예 관계나 쫓고 쫓기는 관계가 아닌 경우 - 자연사 처리
-                            playerData.deadNaturally(victimUUID);
-
-                            SendMessage.sendMessagePlayer(
-                                    victim,
-                                    Component.text("기절되어 2분동안 움직일 수 없습니다.", NamedTextColor.RED)
-                            );
-                        }
-
-                    } else if (playerData.isSlave(attackerUUID)) {
-                        // 노예가 주인을 공격하려는 경우
-                        if (playerData.isMaster(victimUUID, attackerUUID)) {
-                            event.setCancelled(true);
+                        // 메시지 전송
+                        SendMessage.sendMessagePlayer(
+                                victim,
+                                Component.text(actualMaster.getName() + "님의 노예가 되었습니다.", NamedTextColor.RED)
+                        );
+                        if (attacker.equals(actualMaster)) {
                             SendMessage.sendMessagePlayer(
                                     attacker,
-                                    Component.text("하극상은 안됩니다", NamedTextColor.RED)
+                                    Component.text(victim.getName() + "님이 노예가 되었습니다.", NamedTextColor.GREEN)
+                            );
+                        } else {
+                            SendMessage.sendMessagePlayer(
+                                    attacker,
+                                    Component.text(victim.getName() + "님을 주인을 위해 노예로 만들었습니다.", NamedTextColor.GREEN)
+                            );
+                            SendMessage.sendMessagePlayer(
+                                    actualMaster,
+                                    Component.text(attacker.getName() + "님이 " + victim.getName() + "님을 노예로 만들어주었습니다.", NamedTextColor.GREEN)
                             );
                         }
                     }
+
+                    // 노예를 실제 주인 위치로 텔레포트 (항상 실행)
+                    victim.teleport(actualMaster.getLocation());
+
+                } else if (playerData.isSlave(victimUUID) && playerData.isMaster(attackerUUID, victimUUID)) {
+                    // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
+                    useTotemOfUndying(victim, true); // 움직임 제한 해제
                 } else {
-                    if (playerData.isStunned(playerUUID))
-                        event.setCancelled(true);
-                    cancelDeathEvent(event, victim);
+                    // 주인-노예 관계나 쫓고 쫓기는 관계가 아닌 경우 - 자연사 처리
+                    playerData.deadNaturally(victimUUID);
+
+                    SendMessage.sendMessagePlayer(
+                            victim,
+                            Component.text("기절되어 2분동안 움직일 수 없습니다.", NamedTextColor.RED)
+                    );
                 }
-            } else {
-                // 자연사
-                if (playerData.isStunned(playerUUID))
+
+            } else if (playerData.isSlave(attackerUUID)) {
+                // slave kill player
+                if (playerData.isMaster(victimUUID, attackerUUID)) {
                     event.setCancelled(true);
-                cancelDeathEvent(event, victim);
+                    SendMessage.sendMessagePlayer(
+                            attacker,
+                            Component.text("하극상은 안됩니다", NamedTextColor.RED)
+                    );
+                }
             }
+        } else {
+            // monster damage
+            if (playerData.isStunned(playerUUID))
+                event.setCancelled(true);
+            cancelDeathEvent(event, victim);
         }
+
     }
 
     @EventHandler

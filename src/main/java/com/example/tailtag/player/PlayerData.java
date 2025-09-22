@@ -20,6 +20,7 @@ public class PlayerData {
 
     private final Map<UUID, TailPlayer> playerMap = new HashMap<>();
     private final Map<PlayerColor, TailPlayer> originalColorMap = new HashMap<>();
+    private final Map<PlayerColor, Boolean> colorMap = new HashMap<>(); // key: player color, value: whether player (slave, out) or not
     private final List<UUID> survivedPlayers = new ArrayList<>();
     private final List<UUID> slavePlayers = new ArrayList<>();
     private final List<UUID> stunnedPlayers = new ArrayList<>();
@@ -30,8 +31,10 @@ public class PlayerData {
         PlayerColor[] colors = PlayerColor.values();
         for (int i = 0; i < players.size(); i++) {
             PlayerColor color = colors[i % players.size()];
-            playerMap.put(players.get(i).getUniqueId(), new TailPlayer(players.get(i), color));
-            originalColorMap.put(color, playerMap.get(players.get(i).getUniqueId()));
+            TailPlayer tailPlayer = new TailPlayer(players.get(i), color);
+            playerMap.put(players.get(i).getUniqueId(), tailPlayer);
+            colorMap.put(color, false);
+            originalColorMap.put(color, tailPlayer);
         }
     }
 
@@ -70,6 +73,7 @@ public class PlayerData {
     public void clear() {
         playerMap.clear();
         originalColorMap.clear();
+        colorMap.clear();
         clearLists();
     }
 
@@ -86,9 +90,9 @@ public class PlayerData {
 
     /**
      * isMaster
-     * @param masterUUID
-     * @param slaveUUID
-     * return whether the first player is the master of the second player.\
+     * @param masterUUID target master player
+     * @param slaveUUID target slave player
+     * @return whether the first player is the master of the second player.
      */
     public boolean isMaster(UUID masterUUID, UUID slaveUUID) {
         return getMasterPlayer(slaveUUID).getUniqueId().equals(masterUUID);
@@ -181,18 +185,16 @@ public class PlayerData {
     }
 
     public Player getTargetPlayer(UUID uuid) {
-        Player targetPlayer = null;
-        PlayerColor nowColor = getPlayerColor(uuid);
-        while (targetPlayer == null) {
-            PlayerColor nextColor = nowColor.next();
-            TailPlayer target = getTailPlayerByColor(nextColor);
-            nowColor = nextColor;
-            if (target.isAlive()) {
-                targetPlayer = target.getPlayer();
+        PlayerColor nowColor = playerMap.get(uuid).getColor().next();
+        Player target = null;
+        while (target == null) {
+            if (isColorEliminated(nowColor)) {
+                nowColor = nowColor.next();
+                continue;
             }
+            target = getTailPlayerByColor(nowColor).getPlayer();
         }
-
-        return targetPlayer;
+        return target;
     }
 
     public void unstun(UUID uuid) {
@@ -201,5 +203,35 @@ public class PlayerData {
 
     public void stun(UUID uuid) {
         playerMap.get(uuid).stun();
+    }
+
+    public Player getTargetPlayer(PlayerColor playerColor) {
+        PlayerColor nowColor = playerColor.next();
+        Player target = null;
+        while (target == null) {
+            if (isColorEliminated(nowColor)) {
+                nowColor = nowColor.next();
+                continue;
+            }
+            target = getTailPlayerByColor(nowColor).getPlayer();
+        }
+        return target;
+    }
+
+    public Player getHunterPlayer(UUID uuid) {
+        PlayerColor nowColor = playerMap.get(uuid).getColor().prev();
+        Player hunter = null;
+        while (hunter == null) {
+            if (isColorEliminated(nowColor)) {
+                nowColor = nowColor.prev();
+                continue;
+            }
+            hunter = getTailPlayerByColor(nowColor).getPlayer();
+        }
+        return hunter;
+    }
+
+    private boolean isColorEliminated(PlayerColor color) {
+        return colorMap.get(color);
     }
 }
