@@ -410,8 +410,9 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                     Player hunter = playerData.getHunterPlayer(playerUUID);
                     double distance = player.getLocation().distance(hunter.getLocation());
                     if (distance <= 30) {
+                        Location loc = player.getLocation();
                         player.sendActionBar(Component.text("❤", NamedTextColor.RED));
-                        // 사운드 로직 추가
+                        player.playSound(loc, Sound.ENTITY_WARDEN_HEARTBEAT, 0.5f, 1.0f);
                     }
                 }
             }
@@ -512,7 +513,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 event.setCancelled(true);
             cancelDeathEvent(event, victim);
         }
-
     }
 
     @EventHandler
