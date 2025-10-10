@@ -41,7 +41,7 @@ public class TailPlayer {
         return masterPlayer != null ? masterPlayer : this;
     }
 
-    public UUID getUUID() {
+    public UUID getUniqueId() {
         return player.getUniqueId();
     }
 
@@ -51,7 +51,7 @@ public class TailPlayer {
 
     public void addSlave(List<TailPlayer> slavePlayerList) {
         for (TailPlayer newSlave : slavePlayerList) {
-            slaveMap.put(newSlave.getUUID(), newSlave);
+            slaveMap.put(newSlave.getUniqueId(), newSlave);
         }
     }
 
@@ -81,7 +81,7 @@ public class TailPlayer {
     }
 
     public boolean isMaster(TailPlayer player) {
-        return masterPlayer.getUUID().equals(player.getUUID());
+        return masterPlayer.getUniqueId().equals(player.getUniqueId());
     }
 
     public void stun() {

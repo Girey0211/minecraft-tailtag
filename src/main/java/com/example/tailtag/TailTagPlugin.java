@@ -3,8 +3,8 @@ package com.example.tailtag;
 import com.example.tailtag.events.EntityDamage;
 import com.example.tailtag.events.ServerAutoMessage;
 import com.example.tailtag.events.TrackPlayer;
-import com.example.tailtag.player.enums.PlayerColor;
 import com.example.tailtag.player.PlayerManager;
+import com.example.tailtag.player.enums.PlayerColor;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -13,16 +13,10 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerAdvancementDoneEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
@@ -37,9 +31,9 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
     private Location gameCenter;
     private final int GAME_AREA_SIZE = 20; // 20청크
     private BukkitTask gameTask;
-    private BukkitTask heartbeatTask;
 
-
+    private final PlayerManager playerManager = new PlayerManager();
+    
     @Override
     public void onEnable() {
         getLogger().info("꼬리잡기 플러그인이 활성화되었습니다!");
@@ -59,11 +53,9 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         if (gameTask != null) {
             gameTask.cancel();
         }
-        if (heartbeatTask != null) {
-            heartbeatTask.cancel();
-        }
         getLogger().info("꼬리잡기 플러그인이 비활성화되었습니다!");
     }
+
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, Command command, @NotNull String label, String @NotNull [] args) {
@@ -92,7 +84,7 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 startGame(player);
                 break;
             case "reset":
-                resetGame(player);
+                reset(player);
                 break;
             default:
                 SendMessage.sendMessagePlayer(
@@ -105,8 +97,60 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         return true;
     }
 
-    private void startGame(Player commander) {
+    private void saveInventory(Player player) {
+        // 인벤토리 완전 초기화
+        player.getInventory().clear();
+        player.getInventory().setArmorContents(null);
+        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
 
+        // 상태 초기화
+        player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
+        player.setFoodLevel(20);
+        player.setSaturation(20);
+        player.setFireTicks(0);
+        player.clearActivePotionEffects();
+        player.setExp(0);
+        player.setLevel(0);
+    }
+
+    private void startGameTasks() {
+        // 게임 상태 체크 태스크 (1초마다)
+        gameTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!gameActive) return;
+
+                playerManager.updatePlayers();
+                checkGameEnd();
+                playerManager.updateSlave();
+                playerManager.updateStunnedPlayer();
+                playerManager.updateDragonEggBuff();
+                playerManager.showHeartBeat();
+            }
+        }.runTaskTimer(this, 20L, 20L);
+    }
+
+    private void checkGameEnd() {
+        Player winner = playerManager.calculateWinner();
+        if (winner == null) return;
+
+        SendMessage.broadcastMessage(
+                Component.text(
+                        winner.getName(), NamedTextColor.GOLD)
+                        .append(Component.text("님이 승리하셨습니다!")
+                        )
+        );
+
+        // 게임 종료 후 3초 뒤 리셋
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                reset(winner);
+            }
+        }.runTaskLater(this, 60L);
+    }
+
+    public void startGame(Player commander) {
         // region start exception
         if (gameActive) {
             SendMessage.sendMessagePlayer(
@@ -138,13 +182,14 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         gameCenter = commander.getLocation();
 
         // set player data
-        PlayerManager.addPlayers(new ArrayList<>(onlinePlayers));
+        playerManager.addPlayers(new ArrayList<>(onlinePlayers));
 
-        spawnPlayers(new ArrayList<>(onlinePlayers));
+        World world = gameCenter.getWorld();
+        playerManager.spawnPlayers(gameCenter, GAME_AREA_SIZE);
 
         // send "game start" message
         for (Player player : onlinePlayers) {
-            PlayerColor color = PlayerManager.getPlayerColor(player.getUniqueId());
+            PlayerColor color = playerManager.getPlayerColor(player.getUniqueId());
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("게임이 시작되었습니다!", NamedTextColor.GREEN)
@@ -166,7 +211,6 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                                         .decoration(TextDecoration.BOLD, true))
                 );
             }
-
             saveInventory(player);
         }
 
@@ -176,27 +220,12 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
         );
     }
 
-    private void resetGame(Player commander) {
+    public void reset(Player commander) {
         gameActive = false;
 
-        // 모든 플레이어 상태 초기화
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            restoreInventory(player);
-            player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
-            player.clearActivePotionEffects();
-            player.setFireTicks(0);
-            player.setFoodLevel(20);
-            player.setSaturation(20);
-        }
-
-        // 데이터 초기화
-        PlayerManager.clear();
-
+        playerManager.resetGame();
         if (gameTask != null) {
             gameTask.cancel();
-        }
-        if (heartbeatTask != null) {
-            heartbeatTask.cancel();
         }
 
         startGameTasks();
@@ -205,184 +234,5 @@ public class TailTagPlugin extends JavaPlugin implements Listener {
                 commander,
                 Component.text("게임이 리셋되었습니다.", NamedTextColor.GREEN)
         );
-    }
-
-    private void spawnPlayers(List<Player> players) {
-        Random random = new Random();
-        World world = gameCenter.getWorld();
-
-        for (Player player : players) {
-            // 20청크 범위 내 랜덤 위치 생성
-            int offsetX = (random.nextInt(GAME_AREA_SIZE * 2) - GAME_AREA_SIZE) * 16;
-            int offsetZ = (random.nextInt(GAME_AREA_SIZE * 2) - GAME_AREA_SIZE) * 16;
-
-            // 안전한 스폰 위치 찾기
-            Location spawnLocation = findSafeSpawnLocation(world,
-                    gameCenter.getBlockX() + offsetX,
-                    gameCenter.getBlockZ() + offsetZ);
-
-            player.teleport(spawnLocation);
-        }
-    }
-
-    private Location findSafeSpawnLocation(World world, int x, int z) {
-        // 최고 높이부터 시작해서 안전한 위치를 찾음
-        int highestY = world.getHighestBlockYAt(x, z);
-
-        // 하늘에서 스폰되는 것을 방지하기 위해 최대 높이 제한
-        if (highestY > 100) {
-            highestY = 100;
-        }
-
-        // 위에서부터 아래로 내려가면서 안전한 위치 찾기
-        for (int y = highestY; y > 0; y--) {
-            Location checkLoc = new Location(world, x, y, z);
-
-            // 현재 블럭이 고체이고, 위 2블럭이 공기인지 확인
-            if (checkLoc.getBlock().getType().isSolid() &&
-                    !checkLoc.getBlock().getType().equals(Material.LAVA) &&
-                    !checkLoc.getBlock().getType().equals(Material.WATER) &&
-                    checkLoc.clone().add(0, 1, 0).getBlock().getType().equals(Material.AIR) &&
-                    checkLoc.clone().add(0, 2, 0).getBlock().getType().equals(Material.AIR)) {
-
-                return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
-            }
-        }
-
-        // 조건에 맞는 위치가 없을 경우, 기본 위치 사용 (예: Y=64)
-        return new Location(world, x + 0.5, 65, z + 0.5);
-    }
-
-    private void saveInventory(Player player) {
-        // 인벤토리 완전 초기화
-        player.getInventory().clear();
-        player.getInventory().setArmorContents(null);
-        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
-
-        // 상태 초기화
-        player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
-        player.setFoodLevel(20);
-        player.setSaturation(20);
-        player.setFireTicks(0);
-        player.clearActivePotionEffects();
-        player.setExp(0);
-        player.setLevel(0);
-    }
-
-    private void restoreInventory(Player player) {
-        // 게임 종료 후 상태 초기화
-        player.getInventory().clear();
-        player.getInventory().setArmorContents(null);
-        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
-
-        // 체력과 상태 복원
-        player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(20.0);
-        player.setHealth(20.0);
-        player.setFoodLevel(20);
-        player.setSaturation(20);
-        player.setFireTicks(0);
-        player.clearActivePotionEffects();
-        player.setExp(0);
-        player.setLevel(0);
-    }
-
-    private void startGameTasks() {
-        // 게임 상태 체크 태스크 (1초마다)
-        gameTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!gameActive) return;
-
-                updatePlayerData();
-                checkGameEnd();
-                PlayerManager.updateSlave();
-                PlayerManager.updateStunnedPlayer();
-                updateDragonEggEffects();
-            }
-        }.runTaskTimer(this, 20L, 20L);
-
-        // 하트비트 표시 태스크 (1초마다)
-        heartbeatTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!gameActive) return;
-                showHeartbeat();
-            }
-        }.runTaskTimer(this, 20L, 20L);
-    }
-
-    private void updatePlayerData() {
-        PlayerManager.updatePlayerState();
-    }
-
-    private void checkGameEnd() {
-        if (!gameActive) return;
-
-        List<UUID> survivedPlayerList = PlayerManager.getSurvivedPlayer();
-
-        if (survivedPlayerList.size() == 1) {
-            UUID winnerUUID = survivedPlayerList.getFirst();
-            Player winner = Bukkit.getPlayer(winnerUUID);
-
-            if (winner != null) {
-                SendMessage.broadcastMessage(
-                        Component.text(
-                                winner.getName(), NamedTextColor.GOLD)
-                                .append(Component.text("님이 승리하셨습니다!")
-                                )
-                );
-
-                // 게임 종료 후 3초 뒤 리셋
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        resetGame(winner);
-                    }
-                }.runTaskLater(this, 60L);
-            }
-        }
-    }
-    private void updateDragonEggEffects() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (player.getInventory().contains(Material.DRAGON_EGG)) {
-                player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 25, 1, false, false));
-                player.addPotionEffect(new PotionEffect(PotionEffectType.INSTANT_DAMAGE, 25, 0, false, false));
-            }
-        }
-    }
-
-    private void showHeartbeat() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (!gameActive) continue;
-
-            UUID playerUUID = player.getUniqueId();
-
-            if (PlayerManager.isSlave(playerUUID)) {
-                // if player is slave, show distance between master and slave to player
-                Player master = PlayerManager.getMasterPlayer(playerUUID);
-
-                if (master != null && master.isOnline()) {
-                    double distance = player.getLocation().distance(master.getLocation());
-
-                    player.sendActionBar(
-                        Component.text("주인과의 거리: ", NamedTextColor.YELLOW)
-                            .append(Component.text((int) distance))
-                            .append(Component.text("블럭"))
-                    );
-                }
-            } else {
-                // detect nearby hunter
-                PlayerColor playerColor = PlayerManager.getPlayerColor(playerUUID);
-                if (playerColor != null) {
-                    Player hunter = PlayerManager.getHunterPlayer(playerUUID);
-                    double distance = player.getLocation().distance(hunter.getLocation());
-                    if (distance <= 30) {
-                        Location loc = player.getLocation();
-                        player.sendActionBar(Component.text("❤", NamedTextColor.RED));
-                        player.playSound(loc, Sound.ENTITY_WARDEN_HEARTBEAT, 0.5f, 1.0f);
-                    }
-                }
-            }
-        }
     }
 }

@@ -2,9 +2,13 @@ package com.example.tailtag.player;
 
 import com.example.tailtag.player.enums.PlayerColor;
 import com.example.tailtag.player.enums.PlayerCondition;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.*;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.jetbrains.annotations.NotNull;
@@ -18,29 +22,18 @@ import java.util.*;
 // PlayerData에서 메인 로직 관리
 public class PlayerManager {
 
-    private static final Map<UUID, TailPlayer> playerMap = new HashMap<>();
-    private static final Map<PlayerColor, TailPlayer> originalColorMap = new HashMap<>();
-    private static final Map<PlayerColor, Boolean> colorMap = new HashMap<>(); // key: player color, value: whether player (slave, out) or not
-    private static final List<UUID> survivedPlayers = new ArrayList<>();
-    private static final List<UUID> slavePlayers = new ArrayList<>();
-    private static final List<UUID> stunnedPlayers = new ArrayList<>();
-    private static final List<UUID> outPlayers = new ArrayList<>();
-
-    public static void addPlayers(List<Player> players) {
+    public void addPlayers(List<Player> players) {
         Collections.shuffle(players);
         PlayerColor[] colors = PlayerColor.values();
         for (int i = 0; i < players.size(); i++) {
             PlayerColor color = colors[i % players.size()];
-            TailPlayer tailPlayer = new TailPlayer(players.get(i), color);
-            playerMap.put(players.get(i).getUniqueId(), tailPlayer);
-            colorMap.put(color, false);
-            originalColorMap.put(color, tailPlayer);
+            PlayerRepository.addPlayer(players.get(i), color);
         }
     }
 
-    public static void makeSlave(UUID masterUUID, UUID slaveUUID) {
-        TailPlayer masterPlayer = playerMap.get(masterUUID);
-        TailPlayer slavePlayer = playerMap.get(slaveUUID);
+    public void makeSlave(UUID masterUUID, UUID slaveUUID) {
+        TailPlayer masterPlayer = PlayerRepository.getPlayerByUniqueId(masterUUID);
+        TailPlayer slavePlayer = PlayerRepository.getPlayerByUniqueId(slaveUUID);
 
         List<TailPlayer> newSlaves = slavePlayer.enslave(slavePlayer);
         Player slave = slavePlayer.getPlayer();
@@ -58,28 +51,19 @@ public class PlayerManager {
         }
     }
 
-    public static TailPlayer getPlayer(@NotNull UUID uniqueId) {
-        return playerMap.get(uniqueId);
+    public PlayerColor getPlayerColor(@NotNull UUID uniqueId) {
+        return PlayerRepository.getPlayerByUniqueId(uniqueId).getColor();
     }
 
-    public static Player getMasterPlayer(UUID uniqueId) {
-        return playerMap.get(uniqueId).getMaster().getPlayer();
+    public void clear() {
+        PlayerRepository.resetData();
     }
 
-    public static PlayerColor getPlayerColor(@NotNull UUID uniqueId) {
-        return playerMap.get(uniqueId).getColor();
+    public boolean isSlave(UUID uniqueId) {
+        return PlayerRepository.getPlayerByUniqueId(uniqueId).getIsSlave();
     }
 
-    public static void clear() {
-        playerMap.clear();
-        originalColorMap.clear();
-        colorMap.clear();
-        clearLists();
-    }
 
-    public static boolean isSlave(UUID uniqueId) {
-        return playerMap.get(uniqueId).getIsSlave();
-    }
 
     /**
      * isMaster
@@ -87,26 +71,23 @@ public class PlayerManager {
      * @param slaveUUID target slave player
      * @return whether the first player is the master of the second player.
      */
-    public static boolean isMaster(UUID masterUUID, UUID slaveUUID) {
-        return getMasterPlayer(slaveUUID).getUniqueId().equals(masterUUID);
+    public boolean isMaster(UUID masterUUID, UUID slaveUUID) {
+        return PlayerRepository.getPlayerByUniqueId(slaveUUID).getUniqueId().equals(masterUUID);
     }
 
-    public static void deadNaturally(UUID uniqueId) {
-        TailPlayer player = playerMap.get(uniqueId);
+    public void deadNaturally(UUID uniqueId) {
+        TailPlayer player = PlayerRepository.getPlayerByUniqueId(uniqueId);
         player.stun();
     }
 
-    public static boolean isStunned(UUID uniqueId) {
-        return playerMap.get(uniqueId).getState() == PlayerCondition.STUN;
+    public boolean isStunned(UUID uniqueId) {
+        return PlayerCondition.STUN == PlayerRepository.getPlayerByUniqueId(uniqueId).getState();
     }
 
-    public static List<UUID> getSurvivedPlayer() {
-        return survivedPlayers;
-    }
-
-    public static void updateSlave() {
+    public void updateSlave() {
+        List<UUID> slavePlayers = PlayerRepository.getSlavePlayerUniqueIds();
         for (UUID uniqueId : slavePlayers) {
-            TailPlayer player = playerMap.get(uniqueId);
+            TailPlayer player = PlayerRepository.getPlayerByUniqueId(uniqueId);
             Player slave = player.getPlayer();
             Player master = player.getMaster().getPlayer();
 
@@ -132,9 +113,10 @@ public class PlayerManager {
         }
     }
 
-    public static void updateStunnedPlayer() {
+    public void updateStunnedPlayer() {
+        List<UUID> stunnedPlayers = PlayerRepository.getStunnedPlayerUniqueIds();
         for (UUID uniqueId : stunnedPlayers) {
-            TailPlayer stunnedPlayer = playerMap.get(uniqueId);
+            TailPlayer stunnedPlayer = PlayerRepository.getPlayerByUniqueId(uniqueId);
             Player player = stunnedPlayer.getPlayer();
 
             long deathDuration = System.currentTimeMillis() - stunnedPlayer.getDeathTime();
@@ -154,35 +136,31 @@ public class PlayerManager {
         }
     }
 
-    public static void updatePlayerState() {
-        clearLists();
-        for (Map.Entry<UUID, TailPlayer> entry : playerMap.entrySet()) {
-            UUID uniqueId = entry.getKey();
-            TailPlayer player = entry.getValue();
+    public void updatePlayers() {
+        PlayerRepository.clearPlayerState();
+        List<TailPlayer> players = PlayerRepository.getPlayers();
+        for (TailPlayer player : players) {
+            UUID uniqueId = player.getUniqueId();
 
-            if (player.isAlive()) survivedPlayers.add(uniqueId);
-            else if (player.getIsSlave()) slavePlayers.add(uniqueId);
+            if (player.isAlive()) PlayerRepository.addSurvivedPlayer(uniqueId);
+            else if (player.getIsSlave()) PlayerRepository.addSlavePlayer(uniqueId);
             switch (player.getState()) {
-                case STUN -> stunnedPlayers.add(uniqueId);
-                case OUT -> outPlayers.add(uniqueId);
+                case STUN -> PlayerRepository.addStunnedPlayer(uniqueId);
+                case OUT -> PlayerRepository.addOutPlayer(uniqueId);
             }
         }
     }
 
-    public static Player getPlayerByColor(PlayerColor color) {
-        return originalColorMap.get(color).getPlayer();
+    public void unstun(UUID uniqueId) {
+        PlayerRepository.getPlayerByUniqueId(uniqueId).unstun();
     }
 
-    public static void unstun(UUID uniqueId) {
-        playerMap.get(uniqueId).unstun();
+    public void stun(UUID uniqueId) {
+        PlayerRepository.getPlayerByUniqueId(uniqueId).stun();
     }
 
-    public static void stun(UUID uniqueId) {
-        playerMap.get(uniqueId).stun();
-    }
-
-    public static Player getTargetPlayer(UUID uniqueId) {
-        PlayerColor nowColor = playerMap.get(uniqueId).getColor().next();
+    public Player getTargetPlayer(UUID uniqueId) {
+        PlayerColor nowColor = PlayerRepository.getPlayerByUniqueId(uniqueId).getColor().next();
         Player target = null;
         while (target == null) {
             if (isColorEliminated(nowColor)) {
@@ -194,8 +172,8 @@ public class PlayerManager {
         return target;
     }
     
-    public static Player getHunterPlayer(UUID uniqueId) {
-        PlayerColor nowColor = playerMap.get(uniqueId).getColor().prev();
+    public Player getHunterPlayer(UUID uniqueId) {
+        PlayerColor nowColor = PlayerRepository.getPlayerByUniqueId(uniqueId).getColor().prev();
         Player hunter = null;
         while (hunter == null) {
             if (isColorEliminated(nowColor)) {
@@ -207,18 +185,141 @@ public class PlayerManager {
         return hunter;
     }
 
-    private static TailPlayer getTailPlayerByColor(PlayerColor hunterColor) {
-        return originalColorMap.get(hunterColor);
-    }
-
-    private static void clearLists() {
-        survivedPlayers.clear();
-        slavePlayers.clear();
-        stunnedPlayers.clear();
-        outPlayers.clear();
+    private TailPlayer getTailPlayerByColor(PlayerColor color) {
+        return PlayerRepository.getPlayerByColor(color);
     }
     
-    private static boolean isColorEliminated(PlayerColor color) {
-        return colorMap.get(color);
+    private boolean isColorEliminated(PlayerColor color) {
+        return PlayerRepository.isColorEliminated(color);
     }
+
+    public Player calculateWinner() {
+        List<UUID> survivedPlayerList = PlayerRepository.getSurvivedPlayer();
+        if (survivedPlayerList.size() != 1)
+            return null;
+        UUID winnerUUID = survivedPlayerList.getFirst();
+        return PlayerRepository.getPlayerByUniqueId(winnerUUID).getPlayer();
+    }
+
+    public Player getMasterPlayer(UUID uniqueId) {
+        return PlayerRepository.getMasterPlayerByUniqueId(uniqueId).getPlayer();
+    }
+
+    public void updateDragonEggBuff() {
+        for (TailPlayer tailPlayer : PlayerRepository.getPlayerMap()) {
+            Player player = tailPlayer.getPlayer();
+            if (!player.isOnline() || !player.getInventory().contains(Material.DRAGON_EGG)) continue;
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 25, 1, false, false));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.INSTANT_DAMAGE, 25, 0, false, false));
+        }
+    }
+
+    public void showHeartBeat() {
+        for (TailPlayer tailPlayer : PlayerRepository.getPlayerMap()) {
+            Player player = tailPlayer.getPlayer();
+
+            if (tailPlayer.getIsSlave()) {
+                // if player is slave, show distance between master and slave to player
+                Player master = tailPlayer.getMaster().getPlayer();
+                if (master == null || !master.isOnline()) continue;
+                double distance = player.getLocation().distance(master.getLocation());
+                player.sendActionBar(
+                        Component.text("주인과의 거리: ", NamedTextColor.YELLOW)
+                                .append(Component.text((int) distance))
+                                .append(Component.text("블럭"))
+                );
+            } else {
+                // detect nearby hunter
+                PlayerColor playerColor = tailPlayer.getColor();
+                if (playerColor == null) continue;
+                Player hunter = getHunterPlayer(tailPlayer.getUniqueId());
+                double distance = player.getLocation().distance(hunter.getLocation());
+
+                if (distance > 30) continue;
+                Location loc = player.getLocation();
+                player.sendActionBar(Component.text("❤", NamedTextColor.RED));
+                player.playSound(loc, Sound.ENTITY_WARDEN_HEARTBEAT, 0.5f, 1.0f);
+
+            }
+        }
+    }
+
+    public void resetGame() {
+        PlayerRepository.getPlayers();
+        for (TailPlayer tailPlayer : PlayerRepository.getPlayerMap()) {
+            Player player = tailPlayer.getPlayer();
+            restoreInventory(player);
+            player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
+            player.clearActivePotionEffects();
+            player.setFireTicks(0);
+            player.setFoodLevel(20);
+            player.setSaturation(20);
+        }
+        clear();
+    }
+
+    private void restoreInventory(Player player) {
+        // 게임 종료 후 상태 초기화
+        player.getInventory().clear();
+        player.getInventory().setArmorContents(null);
+        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
+
+        // 체력과 상태 복원
+        player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(20.0);
+        player.setHealth(20.0);
+        player.setFoodLevel(20);
+        player.setSaturation(20);
+        player.setFireTicks(0);
+        player.clearActivePotionEffects();
+        player.setExp(0);
+        player.setLevel(0);
+    }
+
+
+    public Location findSafeSpawnLocation(World world, int x, int z) {
+        // 최고 높이부터 시작해서 안전한 위치를 찾음
+        int highestY = world.getHighestBlockYAt(x, z);
+
+        // 하늘에서 스폰되는 것을 방지하기 위해 최대 높이 제한
+        if (highestY > 100) {
+            highestY = 100;
+        }
+
+        // 위에서부터 아래로 내려가면서 안전한 위치 찾기
+        for (int y = highestY; y > 0; y--) {
+            Location checkLoc = new Location(world, x, y, z);
+
+            // 현재 블럭이 고체이고, 위 2블럭이 공기인지 확인
+            if (checkLoc.getBlock().getType().isSolid() &&
+                    !checkLoc.getBlock().getType().equals(Material.LAVA) &&
+                    !checkLoc.getBlock().getType().equals(Material.WATER) &&
+                    checkLoc.clone().add(0, 1, 0).getBlock().getType().equals(Material.AIR) &&
+                    checkLoc.clone().add(0, 2, 0).getBlock().getType().equals(Material.AIR)) {
+
+                return checkLoc.clone().add(0.5, 1, 0.5); // 블럭 중앙, 1블럭 위
+            }
+        }
+
+        // 조건에 맞는 위치가 없을 경우, 기본 위치 사용 (예: Y=64)
+        return new Location(world, x + 0.5, 65, z + 0.5);
+    }
+
+    public void spawnPlayers(Location gameCenter, int arenaSize) {
+        Random random = new Random();
+        World world = gameCenter.getWorld();
+
+        List<TailPlayer> tailPlayers = PlayerRepository.getPlayers();
+
+        for (TailPlayer player : tailPlayers) {
+            // 20청크 범위 내 랜덤 위치 생성
+            int offsetX = gameCenter.getBlockX() + (random.nextInt(arenaSize * 2) - arenaSize) * 16;
+            int offsetZ = gameCenter.getBlockZ() + (random.nextInt(arenaSize * 2) - arenaSize) * 16;
+
+            // 안전한 스폰 위치 찾기
+            Location spawnLocation = findSafeSpawnLocation(world, offsetX, offsetZ);
+
+            player.getPlayer().teleport(spawnLocation);
+        }
+    }
+
 }

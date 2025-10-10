@@ -19,6 +19,8 @@ import java.util.UUID;
 
 public class EntityDamage implements Listener {
 
+    private final PlayerManager playerManager = new PlayerManager();
+
     @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player victim)) return;
@@ -26,7 +28,7 @@ public class EntityDamage implements Listener {
         UUID playerUUID = victim.getUniqueId();
 
         if (!(event instanceof EntityDamageByEntityEvent entityEvent)) {
-            if (PlayerManager.isStunned(playerUUID))
+            if (playerManager.isStunned(playerUUID))
                 event.setCancelled(true);
             cancelDeathEvent(event, victim);
             return;
@@ -43,20 +45,20 @@ public class EntityDamage implements Listener {
                 // player kill player
                 event.setCancelled(true);
 
-                PlayerColor victimColor = PlayerManager.getPlayerColor(victimUUID);
-                PlayerColor attackerColor = PlayerManager.getPlayerColor(attackerUUID);
+                PlayerColor victimColor = playerManager.getPlayerColor(victimUUID);
+                PlayerColor attackerColor = playerManager.getPlayerColor(attackerUUID);
 
                 // 실제 주인 찾기 (killer가 노예인 경우 주인을 찾음)
-                Player actualMaster = PlayerManager.getMasterPlayer(attackerUUID);
+                Player actualMaster = playerManager.getMasterPlayer(attackerUUID);
                 UUID actualMasterUUID = actualMaster.getUniqueId();
 
                 // 올바른 색깔 순서로 잡았는지 확인
-                Player targetPlayer = PlayerManager.getTargetPlayer(actualMasterUUID);
+                Player targetPlayer = playerManager.getTargetPlayer(actualMasterUUID);
 
                 if (targetPlayer.getUniqueId().equals(victimUUID)) {
                     // make slave
-                    if (!PlayerManager.isSlave(victimUUID)) {
-                        PlayerManager.makeSlave(actualMasterUUID, victimUUID);
+                    if (!playerManager.isSlave(victimUUID)) {
+                        playerManager.makeSlave(actualMasterUUID, victimUUID);
 
                         // 메시지 전송
                         SendMessage.sendMessagePlayer(
@@ -83,12 +85,12 @@ public class EntityDamage implements Listener {
                     // 노예를 실제 주인 위치로 텔레포트 (항상 실행)
                     victim.teleport(actualMaster.getLocation());
 
-                } else if (PlayerManager.isSlave(victimUUID) && PlayerManager.isMaster(attackerUUID, victimUUID)) {
+                } else if (playerManager.isSlave(victimUUID) && playerManager.isMaster(attackerUUID, victimUUID)) {
                     // 노예가 주인에게 죽은 경우 - 불사의 토템 사용
                     useTotemOfUndying(victim, true); // 움직임 제한 해제
                 } else {
                     // 주인-노예 관계나 쫓고 쫓기는 관계가 아닌 경우 - 자연사 처리
-                    PlayerManager.deadNaturally(victimUUID);
+                    playerManager.deadNaturally(victimUUID);
 
                     SendMessage.sendMessagePlayer(
                             victim,
@@ -96,9 +98,9 @@ public class EntityDamage implements Listener {
                     );
                 }
 
-            } else if (PlayerManager.isSlave(attackerUUID)) {
+            } else if (playerManager.isSlave(attackerUUID)) {
                 // slave kill player
-                if (PlayerManager.isMaster(victimUUID, attackerUUID)) {
+                if (playerManager.isMaster(victimUUID, attackerUUID)) {
                     event.setCancelled(true);
                     SendMessage.sendMessagePlayer(
                             attacker,
@@ -108,7 +110,7 @@ public class EntityDamage implements Listener {
             }
         } else {
             // monster damage
-            if (PlayerManager.isStunned(playerUUID))
+            if (playerManager.isStunned(playerUUID))
                 event.setCancelled(true);
             cancelDeathEvent(event, victim);
         }
@@ -133,14 +135,14 @@ public class EntityDamage implements Listener {
 
         if (removeFrozen) {
             // 노예가 주인에게 죽은 경우 - 움직임 제한 해제
-            PlayerManager.unstun(playerUUID);
+            playerManager.unstun(playerUUID);
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("주인말을 잘 들으십쇼.", NamedTextColor.GREEN)
             );
         } else {
             // 자연사의 경우 - 2분간 움직임 제한
-            PlayerManager.stun(playerUUID);
+            playerManager.stun(playerUUID);
             SendMessage.sendMessagePlayer(
                     player,
                     Component.text("기절되어 2분동안 움직일 수 없습니다.", NamedTextColor.RED)
